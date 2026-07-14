@@ -1,0 +1,22 @@
+# JSONPlaceholder API — cURL commands untuk import
+# Jalankan: apitest import curl --file curls/jsonplaceholder.txt --output-dir requests/
+
+# List all posts
+curl -X GET https://jsonplaceholder.typicode.com/posts \
+  -H "Accept: application/json"
+
+# Get single post
+curl https://jsonplaceholder.typicode.com/posts/1
+
+# Create a new post
+curl -X POST https://jsonplaceholder.typicode.com/posts \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Import Test","body":"Created via curl import","userId":1}'
+
+# Update a post
+curl -X PUT https://jsonplaceholder.typicode.com/posts/1 \
+  -H "Content-Type: application/json" \
+  -d '{"id":1,"title":"Updated Title","body":"Updated body","userId":1}'
+
+# Delete a post
+curl -X DELETE https://jsonplaceholder.typicode.com/posts/1

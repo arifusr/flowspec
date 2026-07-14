@@ -1,0 +1,511 @@
+================================================================================
+REQUIREMENT DOCUMENT
+Proyek: CLI API Testing Tool (inspirasi Apidog, tanpa UI)
+Versi dokumen: 1.0
+Tanggal: 2026-07-13
+================================================================================
+
+1. RINGKASAN PROYEK
+--------------------------------------------------------------------------------
+Membangun alat testing API berbasis Command Line Interface (CLI) yang memungkinkan
+developer dan QA engineer untuk:
+
+  - Mendefinisikan, menjalankan, dan memvalidasi HTTP API request
+  - Mengorkestrasi skenario test (integration / E2E / regression)
+  - Mengintegrasikan ke pipeline CI/CD
+  - Mengelola environment, variabel, dan koleksi request
+
+Tidak ada antarmuka grafis (GUI/web/desktop). Semua interaksi dilakukan melalui
+terminal dan file konfigurasi (YAML/JSON).
+
+
+2. TUJUAN & PRINSIP DESAIN
+--------------------------------------------------------------------------------
+2.1 Tujuan Utama
+  - Menyediakan pengalaman testing API yang cepat dan scriptable dari terminal
+  - Mendukung workflow developer-first: definisi-as-code, version control friendly
+  - Cocok untuk automation lokal maupun CI/CD (GitHub Actions, GitLab CI, Jenkins, dll.)
+  - Kompatibel dengan format industri (OpenAPI, Postman Collection, HAR)
+
+2.2 Prinsip Desain
+  - Declarative over imperative: test didefinisikan di file, bukan hardcode di script
+  - DSL-first: FlowSpec (.flow) sebagai format authoring utama; YAML sebagai fallback/legacy
+  - Zero-dependency runtime ideal: single binary atau minimal install (Python/Node/Rust)
+  - Output machine-readable (JSON, JUnit XML) dan human-readable (table, colored text)
+  - Exit code sesuai standar CI: 0 = pass, non-zero = fail
+  - Konfigurasi modular: request, flow, environment terpisah
+  - Parse → IR → Execute: semua input format dikonvergi ke Intermediate Representation tunggal
+
+2.3 Out of Scope (Non-Goals) — Fase 1
+  - GUI / web dashboard / desktop app
+  - Visual flow builder (drag-and-drop)
+  - Mock server cloud-hosted
+  - AI-assisted test generation
+  - MCP (Model Context Protocol) client/server
+  - Real-time collaboration multi-user
+  - Performance/load testing skala besar (bisa fase lanjutan)
+
+
+3. PERSONA PENGGUNA
+--------------------------------------------------------------------------------
+  - Backend Developer     : debug endpoint, validasi response cepat
+  - QA Engineer           : buat & jalankan regression test suite
+  - DevOps / SRE          : integrasi test ke CI/CD pipeline
+  - Tech Lead             : review coverage test via report & artifact
+
+
+4. FITUR FUNGSIONAL
+--------------------------------------------------------------------------------
+
+4.0 FlowSpec DSL (Domain Specific Language)
+--------------------------------------------------------------------------------
+  Spesifikasi lengkap: docs/flowspec-dsl.md
+
+  FR-DSL-001  Bahasa FlowSpec dengan ekstensi file .flow sebagai format authoring utama
+  FR-DSL-002  Konstruk utama: request, flow, env, auth, fragment, import
+  FR-DSL-003  Assertion DSL: expect status/json/header/time/size/contract
+  FR-DSL-004  Extract DSL: extract { var from json/header/cookie "path" }
+  FR-DSL-005  Variable: let, interpolasi {{var}}, built-in {{$uuid}}, {{$timestamp}}, env()
+  FR-DSL-006  Control flow: when/unless, for/for_each, repeat, wait, retry/until
+  FR-DSL-007  Composition: import, extends, use auth/fragment, run with override block
+  FR-DSL-008  Metadata: @tags(...), @env(name) sebagai annotation
+  FR-DSL-009  CLI: apitest dsl lint | fmt | compile | show | migrate
+  FR-DSL-010  Parser menghasilkan IR (JSON AST) — executor engine tunggal
+  FR-DSL-011  Error message DSL-aware: saran perbaikan, line number, unknown symbol hint
+  FR-DSL-012  YAML legacy tetap didukung; apitest dsl migrate konversi ke .flow
+  FR-DSL-013  Import eksternal (OpenAPI, Postman, cURL) generate output .flow
+  FR-DSL-014  LSP / syntax highlight / autocomplete (fase 3)
+
+4.1 HTTP Request Engine
+--------------------------------------------------------------------------------
+  FR-REQ-001  Mendukung metode HTTP: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
+  FR-REQ-002  Mendukung URL dengan path parameter (e.g. /users/{id})
+  FR-REQ-003  Mendukung query parameters (key-value, array, encoded)
+  FR-REQ-004  Mendukung request headers (custom + default: User-Agent, Accept, dll.)
+  FR-REQ-005  Mendukung request body:
+                - JSON
+                - form-urlencoded
+                - multipart/form-data (file upload)
+                - raw text (plain, XML, HTML)
+                - binary
+  FR-REQ-006  Mendukung redirect following (on/off, max redirects)
+  FR-REQ-007  Mendukung timeout per request (connect + read)
+  FR-REQ-008  Mendukung SSL/TLS verification toggle (strict / insecure untuk dev)
+  FR-REQ-009  Mendukung HTTP/1.1 dan HTTP/2 (nice-to-have fase 2)
+  FR-REQ-010  Mendukung proxy configuration (HTTP, HTTPS, SOCKS)
+  FR-REQ-011  Mendukung cookie jar (persist cookies antar request dalam scenario)
+  FR-REQ-012  Mendukung gzip/deflate/brotli decompression otomatis
+
+4.2 Authentication
+--------------------------------------------------------------------------------
+  FR-AUTH-001 Bearer Token (Authorization: Bearer {{token}})
+  FR-AUTH-002 Basic Auth (username + password)
+  FR-AUTH-003 API Key (header atau query param)
+  FR-AAUTH-004 OAuth 2.0:
+                - Client Credentials flow
+                - Authorization Code flow (dengan callback lokal atau manual paste token)
+                - Refresh token otomatis
+  FR-AUTH-005 Custom auth via pre-request script/hook (lihat 4.7)
+  FR-AUTH-006 Auth dapat didefinisikan di level collection, folder, atau request (inheritance)
+
+4.3 Environment & Variables
+--------------------------------------------------------------------------------
+  FR-VAR-001 Environment terpisah: dev, staging, production, custom
+  FR-VAR-002 Variable scope:
+                - global (seluruh project)
+                - environment (per env file)
+                - collection
+                - request (local)
+  FR-VAR-003 Syntax interpolasi: {{variable_name}}
+  FR-VAR-004 Variable chaining: response request A → variable → request B
+  FR-VAR-005 Secret variables: disimpan terpisah, tidak dicetak di log/report
+                (e.g. .env, keyring, atau env var sistem)
+  FR-VAR-006 Dynamic variables built-in:
+                - {{$timestamp}}, {{$uuid}}, {{$randomInt}}, {{$randomEmail}}, dll.
+  FR-VAR-007 Override variable via CLI flag: --var key=value
+  FR-VAR-008 Switch environment via CLI: --env staging
+
+4.4 Collections & Request Definition
+--------------------------------------------------------------------------------
+  FR-COL-001 Struktur hierarki: Project > Collection > Folder > Request
+  FR-COL-002 Request didefinisikan dalam file YAML atau JSON (human-readable)
+  FR-COL-003 Satu request = satu file ATAU satu file berisi banyak request (configurable)
+  FR-COL-004 Metadata request: name, description, tags, deprecated flag
+  FR-COL-005 Duplikasi & rename request/folder via CLI
+  FR-COL-006 Template/snippet request untuk mempercepat pembuatan
+
+4.5 Assertions & Response Validation (Contract Testing)
+--------------------------------------------------------------------------------
+  FR-ASSERT-001 Assert HTTP status code (exact, range, one-of)
+  FR-ASSERT-002 Assert response time (max latency ms)
+  FR-ASSERT-003 Assert response headers (exists, equals, contains, regex)
+  FR-ASSERT-004 Assert response body:
+                - JSONPath assertion (exists, equals, type, length, contains)
+                - JSON Schema validation
+                - XML XPath assertion
+                - Plain text contains / regex
+  FR-ASSERT-005 Assert response size (min/max bytes)
+  FR-ASSERT-006 Contract testing: validasi response terhadap OpenAPI spec endpoint
+                - status code sesuai dokumentasi
+                - schema response body sesuai spec
+                - additionalProperties handling
+  FR-ASSERT-007 Custom assertion via post-response script/hook
+  FR-ASSERT-008 Soft assertion vs hard assertion (continue on soft fail — fase 2)
+  FR-ASSERT-009 Assertion failure message yang jelas (expected vs actual)
+
+4.6 Test Scenarios & Orchestration
+--------------------------------------------------------------------------------
+  FR-SCEN-001 Scenario = urutan step (request + logic) yang dieksekusi berurutan
+  FR-SCEN-002 Step types:
+                - HTTP request step
+                - Delay/wait step (sleep N ms)
+                - Conditional (if/else) berdasarkan status code, body, variable
+                - Loop: for (count), for-each (array variable)
+                - Group/step block (reusable sub-scenario)
+  FR-SCEN-003 Data flow antar step via extracted variables (JSONPath, header, cookie)
+  FR-SCEN-004 Setup/teardown hooks di level scenario
+  FR-SCEN-005 Parallel execution step (optional, fase 2)
+  FR-SCEN-006 Tag-based scenario selection: --tags smoke,regression
+  FR-SCEN-007 Skip step/request via flag atau kondisi
+
+4.7 Scripts & Hooks (Pre-request / Post-response)
+--------------------------------------------------------------------------------
+  FR-SCRIPT-001 Pre-request hook: modifikasi request sebelum dikirim
+  FR-SCRIPT-002 Post-response hook: extract data, assert custom, set variable
+  FR-SCRIPT-003 Bahasa script (pilih salah satu saat implementasi):
+                - JavaScript (QuickJS / embedded V8) — rekomendasi untuk kompatibilitas Postman
+                - ATAU Python embedded
+                - ATAU expression DSL tanpa full scripting (fase 1 minimal)
+  FR-SCRIPT-004 API hook standar (inspirasi Postman):
+                - pm.request.*, pm.response.*, pm.variables.set/get, pm.test()
+  FR-SCRIPT-005 Hook dapat didefinisikan di collection, folder, request level
+
+4.8 Data-Driven Testing
+--------------------------------------------------------------------------------
+  FR-DATA-001 Input data dari CSV, JSON, YAML file
+  FR-DATA-002 Iterasi scenario per baris dataset
+  FR-DATA-003 Mapping kolom dataset → variable
+  FR-DATA-004 Mode iterasi: sequential, random
+  FR-DATA-005 Laporan per-iterasi (pass/fail per data row)
+
+4.9 Import & Export
+--------------------------------------------------------------------------------
+  FR-IMP-001 Import OpenAPI 3.0 / 3.1 → generate collection + contract assertions
+  FR-IMP-002 Import Postman Collection v2.1
+  FR-IMP-003 Import cURL command → single request
+  FR-IMP-004 Import HAR file → collection
+  FR-IMP-005 Export collection ke OpenAPI (partial, best-effort)
+  FR-IMP-006 Export hasil test ke JSON report
+
+4.10 CLI Commands (Interface Utama)
+--------------------------------------------------------------------------------
+  FR-CLI-001  apitest run <request|scenario|collection>     Jalankan test
+  FR-CLI-002  apitest run --env <name>                      Pilih environment
+  FR-CLI-003  apitest run --var key=value                   Override variable
+  FR-CLI-004  apitest run --tags <tag1,tag2>                Filter by tag
+  FR-CLI-005  apitest run --reporters json,junit,console    Pilih output format
+  FR-CLI-006  apitest run --fail-fast                       Stop on first failure
+  FR-CLI-007  apitest run --timeout <ms>                    Global timeout
+  FR-CLI-008  apitest request send <file>                   Kirim single request (debug)
+  FR-CLI-009  apitest request show <file>                   Tampilkan resolved request (dry preview)
+  FR-CLI-010  apitest collection list                       List semua collection
+  FR-CLI-011  apitest collection validate                   Validasi syntax file collection
+  FR-CLI-012  apitest env list | env use <name>             Kelola environment
+  FR-CLI-013  apitest init                                  Scaffold project baru
+  FR-CLI-014  apitest import openapi <file>                 Import OpenAPI spec
+  FR-CLI-015  apitest import postman <file>                 Import Postman collection
+  FR-CLI-016  apitest import curl "<curl command>"           Import dari cURL
+  FR-CLI-017  apitest history                               Tampilkan request history lokal
+  FR-CLI-018  apitest config show                           Tampilkan konfigurasi efektif
+  FR-CLI-019  apitest --version                             Versi CLI
+  FR-CLI-020  apitest --help                                Bantuan per command
+
+  Catatan: "apitest" adalah placeholder nama binary. Bisa diganti (e.g. apicli, httptest).
+
+4.11 Output, Logging & Reporting
+--------------------------------------------------------------------------------
+  FR-OUT-001  Console output default: ringkasan pass/fail + detail error
+  FR-OUT-002  Verbose mode (-v, -vv) untuk request/response full
+  FR-OUT-003  Quiet mode (-q) untuk CI (hanya ringkasan)
+  FR-OUT-004  Colored output (auto-detect TTY, disable via --no-color)
+  FR-OUT-005  Report format:
+                - JSON (machine-readable, artifact CI)
+                - JUnit XML (integrasi Jenkins, GitLab, GitHub Actions)
+                - HTML report (static file, optional fase 2)
+  FR-OUT-006  Report berisi: timestamp, duration, request detail, assertion results
+  FR-OUT-007  Redact sensitive data di log (Authorization header, password, token)
+  FR-OUT-008  Save response body ke file (--output-dir) untuk debugging
+
+4.12 Request History
+--------------------------------------------------------------------------------
+  FR-HIST-001 Simpan history request lokal (SQLite atau file JSON Lines)
+  FR-HIST-002 History berisi: URL, method, status, duration, timestamp
+  FR-HIST-003 Replay request dari history: apitest history replay <id>
+  FR-HIST-004 Clear history: apitest history clear
+  FR-HIST-005 Limit retention (configurable, default 1000 entries)
+
+4.13 CI/CD Integration
+--------------------------------------------------------------------------------
+  FR-CI-001  Exit code 0 jika semua test pass, 1 jika ada failure, 2 jika error config
+  FR-CI-002  Flag --reporter junit --output report.xml
+  FR-CI-003  Flag --bail / --fail-fast
+  FR-CI-004  Dokumentasi contoh integrasi: GitHub Actions, GitLab CI, Jenkins
+  FR-CI-005  Mendukung running headless tanpa interaksi
+  FR-CI-006  Support parallel collection run (--parallel, fase 2)
+
+
+5. STRUKTUR PROJECT (FILE LAYOUT)
+--------------------------------------------------------------------------------
+  my-api-tests/
+  ├── apitest.flow              # Konfigurasi project global (FlowSpec DSL)
+  ├── requests/                 # Request reusable (.flow)
+  │   └── users/
+  │       ├── list-users.flow
+  │       └── create-user.flow
+  ├── flows/                    # Skenario orchestration (.flow)
+  │   ├── smoke.flow
+  │   └── user-crud.flow
+  ├── env/                      # Environment (.flow)
+  │   ├── dev.flow
+  │   ├── staging.flow
+  │   └── prod.flow
+  ├── shared/                   # Auth, fragment, mixin
+  │   └── auth.flow
+  ├── data/
+  │   └── users.csv
+  ├── scripts/
+  │   └── auth.js
+  ├── specs/
+  │   └── openapi.yaml
+  ├── build/                    # Compiled IR (optional, gitignored)
+  └── reports/                  # Generated reports (gitignored)
+
+  Legacy layout (YAML) tetap didukung via apitest dsl migrate.
+
+5.1 Contoh Request Definition (FlowSpec DSL)
+--------------------------------------------------------------------------------
+  // requests/users/create-user.flow
+
+  @tags(users, crud, smoke)
+
+  request CreateUser {
+    POST "{{base_url}}/api/v1/users"
+    header Content-Type  = "application/json"
+    header Authorization = "Bearer {{access_token}}"
+
+    body json {
+      name:  "{{user_name}}"
+      email: "{{user_email}}"
+    }
+
+    expect status 201
+    expect json "$.data.email" == "{{user_email}}"
+    expect time < 2s
+
+    extract {
+      user_id from json "$.data.id"
+    }
+  }
+
+5.2 Contoh Flow / Scenario Definition (FlowSpec DSL)
+--------------------------------------------------------------------------------
+  // flows/user-crud.flow
+
+  @env(dev)
+  @tags(crud, regression)
+
+  flow UserCRUD {
+    description "Create, read, update, delete user"
+
+    let user_name  = "Test User"
+    let user_email = "test-{{$uuid}}@example.com"
+
+    step "Create user" {
+      run CreateUser
+    }
+
+    step "Get user detail" {
+      when user_id
+      run GetUser(user_id)
+    }
+
+    step "Update user" {
+      run UpdateUser(user_id)
+    }
+
+    step "Delete user" {
+      run DeleteUser(user_id)
+    }
+
+    teardown {
+      ignore_fail
+      run CleanupOrphans
+    }
+  }
+
+
+6. REQUIREMENT NON-FUNGSIONAL
+--------------------------------------------------------------------------------
+6.1 Performance
+  NFR-PERF-001  Startup CLI < 500ms (native binary) atau < 2s (interpreted)
+  NFR-PERF-002  Overhead per request minimal (< 10ms selain network latency)
+  NFR-PERF-003  Dapat menjalankan 100+ request sequential tanpa memory leak
+
+6.2 Reliability
+  NFR-REL-001   Graceful handling: connection refused, DNS failure, timeout
+  NFR-REL-002   Retry configurable (count, backoff) per request
+  NFR-REL-003   Partial scenario failure tidak corrupt state/history
+
+6.3 Security
+  NFR-SEC-001   Secret tidak ditulis ke report/log default
+  NFR-SEC-002   Support pembacaan secret dari env var sistem (e.g. API_TOKEN)
+  NFR-SEC-003   File permission warning jika env file world-readable
+  NFR-SEC-004   Tidak mengirim telemetry tanpa opt-in
+
+6.4 Usability
+  NFR-USE-001   Pesan error jelas dengan saran perbaikan
+  NFR-USE-002   Shell autocomplete (bash, zsh, fish) — fase 2
+  NFR-USE-003   Dokumentasi built-in: apitest help <command>
+  NFR-USE-004   Validasi schema file config dengan error line number
+
+6.5 Compatibility
+  NFR-COMP-001  Linux, macOS, Windows (WSL + native)
+  NFR-COMP-002  Python 3.10+ / Node 18+ / Go 1.21+ / Rust (pilih stack saat dev)
+  NFR-COMP-003  OpenAPI 3.0.x dan 3.1.x support
+
+6.6 Maintainability
+  NFR-MAIN-001  Modular architecture: core engine, CLI, parsers, reporters terpisah
+  NFR-MAIN-002  Unit test coverage >= 80% untuk core engine
+  NFR-MAIN-003  Integration test dengan mock HTTP server (wiremock / httptest)
+
+
+7. PERBANDINGAN DENGAN APIDOG (MAPPING FITUR)
+--------------------------------------------------------------------------------
+  Fitur Apidog                    CLI Tool                    Fase
+  ─────────────────────────────────────────────────────────────────────────
+  API Debugging                   apitest request send        MVP
+  Visual Test Scenario            scenario YAML + CLI run     MVP
+  Assertions                      YAML assert blocks          MVP
+  Environment management          env YAML files              MVP
+  Pre/Post scripts                JS hooks                    MVP (basic)
+  OpenAPI import                  apitest import openapi      MVP
+  Contract/Response validation    OpenAPI-based assert        MVP
+  Postman import                  apitest import postman      Fase 2
+  Data-driven testing             CSV/JSON iteration          Fase 2
+  CI/CD CLI                       apitest run + reporters     MVP
+  Mock server                     built-in mock (optional)    Fase 3
+  Performance testing             load test command           Fase 3
+  AI test generation              N/A (out of scope)          -
+  Visual flow builder             N/A (out of scope)          -
+  API documentation publish       N/A (out of scope)          -
+  MCP integration                 N/A (out of scope)          -
+
+
+8. ROADMAP IMPLEMENTASI
+--------------------------------------------------------------------------------
+8.1 MVP (Fase 1) — Target: usable untuk daily development
+  [ ] FlowSpec DSL parser (request, flow, env, expect, extract, let)
+  [ ] HTTP request engine (4.1 core)
+  [ ] Environment & variables (4.3)
+  [ ] Basic assertions via expect DSL (4.5 core)
+  [ ] CLI: init, run, dsl lint, dsl show (4.10 core)
+  [ ] Console + JSON reporter (4.11 core)
+  [ ] Exit codes untuk CI (4.13)
+  [ ] Import cURL → generate .flow (4.9)
+  [ ] Basic auth + Bearer token (4.2 core)
+  [ ] IR (JSON AST) sebagai internal representation
+
+8.2 Fase 2 — Automation & Team Ready
+  [ ] Flow control DSL: when/unless, for/csv, wait, retry/until (4.6, 4.0)
+  [ ] Composition: import, extends, run override, fragment (4.0)
+  [ ] Pre/post scripts (4.7)
+  [ ] OpenAPI import → .flow + contract testing (4.5, 4.9)
+  [ ] Postman import → .flow (4.9)
+  [ ] apitest dsl fmt, apitest dsl migrate (YAML → .flow)
+  [ ] JUnit XML reporter (4.11)
+  [ ] Request history (4.12)
+  [ ] OAuth 2.0 flows (4.2)
+  [ ] Retry & fail-fast (6.2)
+
+8.3 Fase 3 — Advanced
+  [ ] LSP + VS Code extension (syntax highlight, autocomplete, go-to-definition)
+  [ ] apitest dsl repl (interactive)
+  [ ] Built-in mock server lokal
+  [ ] Performance/load testing basic
+  [ ] Parallel step execution
+  [ ] HTML report
+  [ ] Plugin/extension system
+  [ ] Shell autocomplete
+
+
+9. KRITERIA PENERIMAAN (ACCEPTANCE CRITERIA) — MVP
+--------------------------------------------------------------------------------
+  AC-001  User dapat init project baru dengan `apitest init` dan mendapat scaffold
+  AC-002  User dapat definisikan request GET dan POST di YAML dan menjalankannya
+  AC-003  User dapat switch environment (dev/staging) dan URL berubah sesuai variable
+  AC-004  User dapat menambahkan assertion status 200 dan JSONPath equals
+  AC-005  Test failure menghasilkan exit code 1 dan pesan error yang jelas
+  AC-006  User dapat import cURL dan langsung run request
+  AC-007  User dapat generate JSON report dari `apitest run --reporter json`
+  AC-008  Authorization Bearer token di-resolve dari environment variable
+  AC-009  Secret token tidak muncul di console output default
+  AC-010  Scenario 3-step (create → get → delete) berjalan dengan variable chaining
+
+
+10. STACK TEKNOLOGI (REKOMENDASI — PILIH SAAT IMPLEMENTASI)
+--------------------------------------------------------------------------------
+  Opsi A — Python (cepat develop, rich ecosystem)
+    - CLI: typer / click
+    - HTTP: httpx
+    - YAML: pyyaml
+    - JSONPath: jsonpath-ng
+    - Schema: jsonschema
+    - Report: custom + junit-xml
+
+  Opsi B — Go (single binary, cepat, CI-friendly)
+    - CLI: cobra
+    - HTTP: net/http atau resty
+    - YAML: gopkg.in/yaml.v3
+
+  Opsi C — Rust (performa maksimal, binary kecil)
+    - CLI: clap
+    - HTTP: reqwest
+
+  Opsi D — Node.js/TypeScript (kompatibilitas script Postman)
+    - CLI: commander / oclif
+    - HTTP: undici / axios
+    - Script engine: isolated-vm (Postman-compatible API)
+
+
+11. GLOSSARY
+--------------------------------------------------------------------------------
+  FlowSpec      : Domain Specific Language (.flow) untuk authoring test
+  request       : Blok DSL — satu HTTP call + expect + extract (reusable unit)
+  flow          : Blok DSL — orchestration multi-step (scenario bisnis)
+  env           : Blok DSL — variable per deployment target
+  expect        : Keyword assertion DSL (status, json, header, time, contract)
+  extract       : Keyword ambil value dari response → variable
+  IR            : Intermediate Representation (JSON AST) hasil compile DSL
+  fragment      : Mixin step reusable via `use fragment`
+  Collection    : (legacy) Kumpulan request YAML — migrasi ke requests/
+  Scenario      : (legacy) Urutan step YAML — migrasi ke flows/
+  Contract Test : Validasi response terhadap OpenAPI specification
+  Hook          : Script pre/post eksekusi request
+  Reporter      : Formatter output hasil test (console, JSON, JUnit)
+
+
+12. REFERENSI
+--------------------------------------------------------------------------------
+  - FlowSpec DSL  : docs/flowspec-dsl.md (spesifikasi bahasa internal)
+  - Apidog       : https://apidog.com (inspirasi fitur)
+  - Karate DSL   : https://github.com/karatelabs/karate (inspirasi DSL syntax)
+  - Hurl         : https://hurl.dev (inspirasi HTTP syntax ringkas)
+  - Postman CLI  : https://learning.postman.com/docs/postman-cli/postman-cli-overview/
+  - HTTPie       : https://httpie.io/ (inspirasi UX CLI)
+  - OpenAPI Spec : https://spec.openapis.org/oas/v3.1.0
+  - Postman Collection Format v2.1
+  - JUnit XML Report Format (CI integration)
+
+================================================================================
+END OF DOCUMENT
+================================================================================

@@ -1,0 +1,10 @@
+@tags(posts, smoke)
+
+request ListPosts {
+  GET "{{base_url}}/posts"
+
+  expect status 200
+  expect json "$" is array
+  expect json "$" length >= 1
+  expect time < 5s
+}

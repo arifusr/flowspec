@@ -1,0 +1,4 @@
+env dev {
+  base_url     = "https://jsonplaceholder.typicode.com"
+  access_token = "demo-token"
+}

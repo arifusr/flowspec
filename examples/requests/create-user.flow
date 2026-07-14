@@ -1,0 +1,24 @@
+// examples/requests/create-user.flow
+
+@tags(users, crud)
+
+request CreateUser {
+  POST "{{base_url}}/posts"
+
+  header Content-Type  = "application/json"
+  header Authorization = "Bearer {{access_token}}"
+
+  body json {
+    title: "{{user_name}}"
+    body:  "{{user_email}}"
+    userId: "1"
+  }
+
+  expect status 201
+  expect json "$.title" == "{{user_name}}"
+  expect time < 5s
+
+  extract {
+    user_id    from json "$.id"
+  }
+}

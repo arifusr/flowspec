@@ -1,0 +1,25 @@
+import requests/list-posts.flow
+import requests/get-post.flow
+import requests/create-user.flow
+
+@tags(smoke)
+
+flow SmokeTest {
+  description "Quick sanity check - list, get, create"
+
+  let post_id    = "1"
+  let user_name  = "FlowSpec User"
+  let user_email = "flowspec@example.com"
+
+  step "List posts" {
+    run ListPosts
+  }
+
+  step "Get single post" {
+    run GetPost
+  }
+
+  step "Create resource" {
+    run CreateUser
+  }
+}

@@ -1,0 +1,48 @@
+// examples/user-crud.flow
+// Contoh lengkap FlowSpec DSL — User CRUD scenario
+
+@import
+import requests/users/create-user.flow
+import requests/users/get-user.flow
+import requests/users/update-user.flow
+import requests/users/delete-user.flow
+
+@tags(crud, smoke, users)
+@env(dev)
+
+flow UserCRUD {
+  description "Create → Read → Update → Delete user"
+
+  let user_name  = "Test User"
+  let user_email = "test-{{$uuid}}@example.com"
+
+  step "Create user" {
+    run CreateUser
+    expect json "$.data.id" exists
+  }
+
+  step "Get user detail" {
+    when user_id
+    run GetUser(user_id)
+    expect json "$.data.name" == user_name
+  }
+
+  step "Update user" {
+    run UpdateUser(user_id) {
+      body json {
+        name: "Updated Name"
+      }
+      expect json "$.data.name" == "Updated Name"
+    }
+  }
+
+  step "Delete user" {
+    run DeleteUser(user_id)
+    expect status 204
+  }
+
+  teardown "Cleanup orphans" {
+    ignore_fail
+    run CleanupOrphans
+  }
+}

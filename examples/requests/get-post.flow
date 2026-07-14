@@ -1,0 +1,10 @@
+@tags(posts, smoke)
+
+request GetPost {
+  GET "{{base_url}}/posts/{{post_id}}"
+
+  expect status 200
+  expect json "$.id" exists
+  expect json "$.title" exists
+  expect time < 3s
+}

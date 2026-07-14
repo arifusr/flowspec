@@ -1,0 +1,10 @@
+project "FlowSpec Examples" {
+  version     = "1.0"
+  default_env = dev
+
+  env dev from "env/dev.flow"
+
+  settings {
+    timeout = 30s
+  }
+}
