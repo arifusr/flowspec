@@ -30,13 +30,10 @@
 
 ## 7.2 Flow Linear Sederhana
 
+Flow bisa mereferensi request **by name** tanpa `import` — selama request ada di folder `requests/` dalam project.
+
 ```flow
 // flows/post-crud.flow
-
-@import
-import requests/posts/create-post.flow
-import requests/posts/get-post.flow
-import requests/posts/delete-post.flow
 
 @tags(posts, crud)
 @env(dev)
@@ -62,6 +59,19 @@ flow PostCRUD {
     expect status 204
   }
 }
+```
+
+💡 **Tip:** `apitest` otomatis memuat semua file `.flow` dari folder `requests/` dan `shared/` saat menjalankan flow. Kamu **tidak perlu** menulis `import` statement untuk request yang sudah ada di struktur project standar.
+
+**Kapan perlu `import`?**
+- Jika request berada di lokasi non-standar
+- Jika kamu ingin eksplisit tentang dependensi (self-documenting)
+- Keduanya valid — pilih style yang cocok untuk tim kamu
+
+```flow
+// Opsional: import eksplisit (lebih verbose, tapi jelas dependensinya)
+import requests/posts/create-post.flow
+import requests/posts/get-post.flow
 ```
 
 Jalankan:
@@ -176,12 +186,6 @@ Teardown **selalu dijalankan** — meski ada step yang fail — mirip `finally` 
 ```flow
 // flows/smoke.flow
 
-@import
-import requests/health/check.flow
-import requests/auth/login.flow
-import requests/users/list-users.flow
-import requests/posts/list-posts.flow
-
 @tags(smoke)
 @env(staging)
 
@@ -194,6 +198,8 @@ flow SmokeTest {
   step "List posts"    { run ListPosts }
 }
 ```
+
+Request `HealthCheck`, `Login`, `ListUsers`, `ListPosts` otomatis ditemukan dari folder `requests/` — tidak perlu `import`.
 
 Jalankan hanya smoke:
 

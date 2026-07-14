@@ -85,8 +85,10 @@ belajar-flowspec/
 | Folder | Isi | Analogi |
 |---|---|---|
 | `env/` | URL & token | "Mau test ke server mana?" |
-| `requests/` | Request individual | "Resep masakan per hidangan" |
+| `requests/` | Request individual (auto-loaded) | "Resep masakan per hidangan" |
 | `flows/` | Scenario | "Menu lengkap: appetizer → main → dessert" |
+
+💡 **Tip:** Semua file `.flow` di `requests/` dan `shared/` otomatis dimuat saat kamu run flow. Flow bisa langsung `run NamaRequest` tanpa perlu `import`.
 
 ---
 

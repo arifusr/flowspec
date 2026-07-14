@@ -249,6 +249,10 @@ func printCommandHelp(cmd string) {
 Usage:
   apitest run <file-or-directory> [options]
 
+Auto-discovery:
+  Requests in requests/ and shared/ are loaded automatically.
+  Flows can reference any request by name without import statements.
+
 Examples:
   apitest run requests/users/list-users.flow --env dev
   apitest run flows/ --env staging --tags smoke

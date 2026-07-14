@@ -436,7 +436,21 @@ step "Fetch all resources" {
 
 ## 8. Composition & Reuse
 
-### Import request dari file lain
+### Auto-discovery (default behavior)
+
+`apitest` otomatis memuat semua file `.flow` dari folder `requests/` dan `shared/` saat runtime. Flow bisa langsung `run RequestName` tanpa import:
+
+```flow
+// Tidak perlu import — request otomatis ditemukan dari requests/
+flow UserCRUD {
+  step "Login"  { run Login }
+  step "Create" { run CreateUser }
+}
+```
+
+### Import eksplisit (opsional)
+
+Import eksplisit berguna untuk self-documenting dependensi atau file di lokasi non-standar:
 
 ```flow
 import requests/users/create-user.flow

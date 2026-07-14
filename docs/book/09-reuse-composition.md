@@ -41,10 +41,31 @@ Kalau token format berubah → edit **semua** file. FlowSpec punya solusi: `auth
 
 ## 9.2 Import — Gunakan Request dari File Lain
 
-Agar flow bisa `run` request, file request harus di-import:
+### Auto-discovery (default)
+
+`apitest` otomatis memuat semua request dari folder `requests/` dan `shared/` saat menjalankan flow. Artinya flow bisa langsung `run` request by name **tanpa import**:
 
 ```flow
-// flows/user-crud.flow
+// flows/user-crud.flow — tanpa import, langsung run by name
+
+flow UserCRUD {
+  step "Login"  { run Login }
+  step "Create" { run CreateUser }
+  step "Get"    { run GetUser(user_id) }
+  step "Delete" { run DeleteUser(user_id) }
+}
+```
+
+Ini bekerja selama:
+- Project punya file `apitest.flow` di root (project marker)
+- Request files ada di folder `requests/` (atau folder yang didefinisikan di project config)
+
+### Import eksplisit (opsional)
+
+Jika kamu ingin lebih jelas tentang dependensi, atau request ada di lokasi non-standar:
+
+```flow
+// flows/user-crud.flow — dengan import eksplisit
 
 import requests/auth/login.flow
 import requests/users/create-user.flow

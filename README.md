@@ -222,6 +222,13 @@ request ListUsers {
 # Debug single request
 apitest run requests/users/list-users.flow --env dev
 
+# Buat flow — langsung referensi request by name (tanpa import)
+# File: flows/smoke.flow
+# flow Smoke {
+#   step "List users" { run ListUsers }
+# }
+apitest run flows/smoke.flow --env dev
+
 # Validasi syntax DSL
 apitest dsl lint requests/
 ```
@@ -266,6 +273,8 @@ Produk ini dibangun dari empat building block yang saling terhubung:
 | **auth / fragment** | Building block reusable | `shared/auth.flow` |
 
 **Prinsip utama:** semua definisi test ditulis dalam **FlowSpec DSL** (`.flow`) — file teks yang bisa di-commit ke Git, di-review lewat PR, dan dijalankan identik di laptop maupun CI. YAML legacy tetap didukung via `apitest dsl migrate`.
+
+**Auto-discovery:** Flow otomatis menemukan request by name dari folder `requests/` dan `shared/` — tidak perlu `import` statement untuk project standar. Cukup taruh request di `requests/`, lalu `run NamaRequest` dari flow manapun.
 
 ---
 

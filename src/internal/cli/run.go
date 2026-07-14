@@ -60,6 +60,15 @@ func RunTest(opts RunOptions) int {
 		loadFlowDir(engine, sharedDir)
 	}
 
+	// Load all request definitions from requests/ directory
+	requestsDir := filepath.Join(baseDir, "requests")
+	if info, err := os.Stat(requestsDir); err == nil && info.IsDir() {
+		loadFlowDir(engine, requestsDir)
+	}
+
+	// Also try to load custom directories from apitest.flow project config
+	loadProjectConfigDirs(engine, baseDir)
+
 	// Determine target path
 	target := opts.Path
 	if target == "" {
@@ -244,4 +253,36 @@ func loadFlowDir(engine *runtime.Engine, dir string) {
 		engine.LoadFile(path)
 		return nil
 	})
+}
+
+// loadProjectConfigDirs parses apitest.flow to find custom directory declarations
+// like `requests from "custom-requests/"` and loads them.
+func loadProjectConfigDirs(engine *runtime.Engine, baseDir string) {
+	configPath := filepath.Join(baseDir, "apitest.flow")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+
+	// Simple line-based scan for `<keyword> from "path"` patterns
+	// This handles: requests from "requests/", flows from "flows/", shared from "shared/"
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Match patterns like: requests from "requests/"
+		// But skip env lines (env dev from "env/dev.flow")
+		if strings.HasPrefix(line, "env ") || strings.HasPrefix(line, "spec ") {
+			continue
+		}
+		if strings.Contains(line, " from ") {
+			parts := strings.SplitN(line, " from ", 2)
+			if len(parts) == 2 {
+				dirPath := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+				fullPath := filepath.Join(baseDir, dirPath)
+				if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+					loadFlowDir(engine, fullPath)
+				}
+			}
+		}
+	}
 }
