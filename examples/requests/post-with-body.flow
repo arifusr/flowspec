@@ -1,0 +1,16 @@
+@tags(test)
+
+request PostWithBody {
+  POST "{{base_url}}/posts"
+
+  header Content-Type = "application/json"
+
+  body json {
+    title: "Body Test"
+    body: "This should be sent"
+    userId: "1"
+  }
+
+  expect status 201
+  expect json "$.title" == "Body Test"
+}

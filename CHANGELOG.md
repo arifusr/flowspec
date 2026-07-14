@@ -6,6 +6,61 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 ---
 
+## [0.3.2] — 2026-07-14
+
+### Fixed
+
+- **Numeric coercion bug** — String values di `body json { ... }` yang terlihat seperti angka (misalnya `"320301"`) tidak lagi dikonversi ke JSON number. Sebelumnya `material: "320301"` dikirim sebagai `{"material":320301}` (number), sekarang dikirim sebagai `{"material":"320301"}` (string). Fix ini juga diterapkan pada `set` overrides di `body from schema`.
+
+  **Behavior baru:**
+  | DSL | JSON terkirim |
+  |-----|---------------|
+  | `field: "320301"` | `"field": "320301"` (string) |
+  | `active: true` | `"active": true` (boolean) |
+  | `active: false` | `"active": false` (boolean) |
+
+- **Cookie extraction** — Perbaikan parsing `Set-Cookie` header yang mengandung `=` di value (misalnya JWT token). Extraction sekarang menggunakan prefix matching (`name=`) bukan generic split.
+
+### Changed
+
+- Versi naik ke 0.3.2
+
+---
+
+## [0.3.1] — 2026-07-14
+
+### Added
+
+- **`write` statement** — Simpan response (atau bagian response) ke file. Output di-pretty-print otomatis.
+  ```flow
+  step "Get data" {
+    run GetCompany
+    write last.body to "reports/company-response.json"
+    write last.json("$.data[0]") to "reports/first-company.json"
+    write last.json("$[?(@.name=='PT ABC')].id") to "reports/abc-id.txt"
+  }
+  ```
+
+  Variasi yang didukung:
+  | Source | Hasil |
+  |--------|-------|
+  | `write last.body to "path"` | Full response body (pretty JSON) |
+  | `write last.json("$.path") to "path"` | Subset JSON via JSONPath + filter |
+  | `write last.header("Name") to "path"` | Header value |
+  | `write last.status to "path"` | Status code |
+  | `write "{{var}}" to "path"` | Variable value |
+
+- **Append mode** — Tambahkan ke file tanpa overwrite:
+  ```flow
+  write last.body to "reports/all-responses.jsonl" append
+  ```
+
+### Changed
+
+- Versi naik ke 0.3.1
+
+---
+
 ## [0.3.0] — 2026-07-14
 
 ### Added

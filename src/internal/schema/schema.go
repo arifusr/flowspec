@@ -240,15 +240,8 @@ func parseSetValue(value string) interface{} {
 	if value == "false" {
 		return false
 	}
-	// Integer
-	if n, err := strconv.Atoi(value); err == nil {
-		return n
-	}
-	// Float
-	if f, err := strconv.ParseFloat(value, 64); err == nil {
-		return f
-	}
-	// String
+	// All other values stay as string — no implicit numeric coercion.
+	// Users writing `set qty = "500"` expect JSON string "500", not number 500.
 	return value
 }
 

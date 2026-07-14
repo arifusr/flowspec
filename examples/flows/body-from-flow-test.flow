@@ -1,0 +1,11 @@
+@tags(test)
+@env(dev)
+
+flow BodyFromFlowTest {
+  description "Test that POST body is sent when called from flow"
+
+  step "Post with body from flow" {
+    run PostWithBody
+    write last.body to "reports/body-test-response.json"
+  }
+}

@@ -181,14 +181,23 @@ type StepDecl struct {
 	Run      *RunDecl
 	Expects  []ExpectDecl
 	Lets     []LetDecl
-	Logs     []string // log("message") statements
-	Wait     string   // e.g. "3s"
+	Logs     []string    // log("message") statements
+	Writes   []WriteDecl // write ... to "path" statements
+	Wait     string      // e.g. "3s"
 	Retry    *RetryDecl
 	Repeat   *RepeatDecl
 	ForLoop  *ForLoopDecl
 }
 
 func (s *StepDecl) Pos() Position { return s.Position }
+
+// WriteDecl represents `write <source> to "path"` statement.
+type WriteDecl struct {
+	Position Position
+	Source   string // last.body, last.json("$.path"), last.header("X"), last.status, "{{var}}"
+	Path     string // output file path
+	Append   bool   // append mode
+}
 
 // RunDecl represents `run RequestName(args) { overrides }`
 type RunDecl struct {

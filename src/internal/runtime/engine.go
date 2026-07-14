@@ -203,6 +203,15 @@ func (e *Engine) ExecuteRequest(req *ast.RequestDecl) StepResult {
 		val := extractValue(ext, resp)
 		if val != "" {
 			e.Vars.Set(ext.Variable, val)
+			if e.Verbose >= 2 {
+				display := val
+				if len(display) > 40 {
+					display = display[:40] + "..."
+				}
+				fmt.Printf("    ✓ extract %s = %s\n", ext.Variable, display)
+			}
+		} else if e.Verbose >= 2 {
+			fmt.Printf("    ⚠ extract %s = (empty)\n", ext.Variable)
 		}
 	}
 
@@ -229,6 +238,19 @@ func extractValue(ext ast.ExtractDecl, resp *HTTPResponse) string {
 		cookies := resp.Headers.Values("Set-Cookie")
 		for _, c := range cookies {
 			if strings.Contains(c, ext.Path) {
+				// Find the value between 'name=' and first ';'
+				prefix := ext.Path + "="
+				idx := strings.Index(c, prefix)
+				if idx != -1 {
+					valueStart := idx + len(prefix)
+					rest := c[valueStart:]
+					semiIdx := strings.Index(rest, ";")
+					if semiIdx != -1 {
+						return rest[:semiIdx]
+					}
+					return rest
+				}
+				// Fallback: split by first =
 				parts := strings.SplitN(c, "=", 2)
 				if len(parts) == 2 {
 					return strings.Split(parts[1], ";")[0]
@@ -333,6 +355,11 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 			fmt.Printf("  📋 log: %s\n", resolved)
 		}
 
+		// Execute write statements after run
+		for _, w := range step.Writes {
+			e.executeWrite(w)
+		}
+
 		// Additional step-level expects
 		if result.Passed && len(step.Expects) > 0 {
 			// We need the last response for step-level expects
@@ -350,6 +377,10 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 		for _, msg := range step.Logs {
 			resolved := e.Vars.Interpolate(msg)
 			fmt.Printf("  📋 log: %s\n", resolved)
+		}
+
+		for _, w := range step.Writes {
+			e.executeWrite(w)
 		}
 	}
 
@@ -545,6 +576,98 @@ func hasFailure(results []StepResult) bool {
 		}
 	}
 	return false
+}
+
+// executeWrite handles `write <source> to "path"` statements.
+func (e *Engine) executeWrite(w ast.WriteDecl) {
+	if e.LastResponse == nil {
+		fmt.Printf("  ⚠ write: no response available\n")
+		return
+	}
+
+	// Resolve the path with variable interpolation
+	outputPath := e.Vars.Interpolate(w.Path)
+	if !filepath.IsAbs(outputPath) {
+		outputPath = filepath.Join(e.BaseDir, outputPath)
+	}
+
+	// Resolve source content
+	var content []byte
+	source := strings.TrimSpace(w.Source)
+
+	switch {
+	case source == "last.body":
+		// Pretty-print if it's JSON
+		content = prettyJSON(e.LastResponse.Body)
+
+	case strings.HasPrefix(source, "last.json("):
+		path := source[10 : len(source)-1]
+		path = strings.Trim(path, "\"'")
+		var body interface{}
+		if err := json.Unmarshal(e.LastResponse.Body, &body); err == nil {
+			val, found := evalJSONPath(body, path)
+			if found {
+				data, _ := json.MarshalIndent(val, "", "  ")
+				content = data
+			} else {
+				fmt.Printf("  ⚠ write: path %q not found in response\n", path)
+				return
+			}
+		} else {
+			fmt.Printf("  ⚠ write: response is not valid JSON\n")
+			return
+		}
+
+	case strings.HasPrefix(source, "last.header("):
+		name := source[12 : len(source)-1]
+		name = strings.Trim(name, "\"'")
+		content = []byte(e.LastResponse.Headers.Get(name))
+
+	case source == "last.status":
+		content = []byte(fmt.Sprintf("%d", e.LastResponse.StatusCode))
+
+	default:
+		// Interpolate as variable/template
+		content = []byte(e.Vars.Interpolate(source))
+	}
+
+	// Write to file
+	dir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Printf("  ⚠ write: cannot create directory %s: %s\n", dir, err)
+		return
+	}
+
+	var err error
+	if w.Append {
+		f, ferr := os.OpenFile(outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if ferr != nil {
+			err = ferr
+		} else {
+			_, err = f.Write(append(content, '\n'))
+			f.Close()
+		}
+	} else {
+		err = os.WriteFile(outputPath, content, 0644)
+	}
+
+	if err != nil {
+		fmt.Printf("  ⚠ write: %s\n", err)
+	} else {
+		fmt.Printf("  💾 write: %s (%d bytes)\n", outputPath, len(content))
+	}
+}
+
+// prettyJSON attempts to pretty-print JSON, returns as-is if not valid JSON.
+func prettyJSON(data []byte) []byte {
+	var obj interface{}
+	if err := json.Unmarshal(data, &obj); err == nil {
+		pretty, err := json.MarshalIndent(obj, "", "  ")
+		if err == nil {
+			return pretty
+		}
+	}
+	return data
 }
 
 // buildSchemaBody loads a JSON Schema, generates payload, applies overrides.

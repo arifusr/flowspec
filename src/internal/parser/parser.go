@@ -875,6 +875,39 @@ func (p *Parser) parseLastExpression() string {
 	return sb.String()
 }
 
+// parseWrite parses `write <source> to "path" [append]`
+func (p *Parser) parseWrite() ast.WriteDecl {
+	pos := p.curPos()
+	p.nextToken() // skip 'write'
+	w := ast.WriteDecl{Position: pos}
+
+	// Parse source: last.body, last.json("..."), last.header("..."), last.status, or "{{var}}"
+	if p.curToken.Literal == "last" || strings.HasPrefix(p.curToken.Literal, "last.") {
+		w.Source = p.parseLastExpression()
+	} else {
+		// String value or variable interpolation
+		w.Source = p.curToken.Literal
+		p.nextToken()
+	}
+
+	// Expect 'to'
+	if p.curToken.Type == lexer.TOKEN_TO {
+		p.nextToken() // skip 'to'
+	}
+
+	// Path
+	w.Path = p.curToken.Literal
+	p.nextToken()
+
+	// Optional 'append'
+	if p.curToken.Literal == "append" {
+		w.Append = true
+		p.nextToken()
+	}
+
+	return w
+}
+
 func (p *Parser) parseStep() *ast.StepDecl {
 	pos := p.curPos()
 	p.nextToken() // skip 'step'
@@ -927,6 +960,9 @@ func (p *Parser) parseStep() *ast.StepDecl {
 				}
 				step.Logs = append(step.Logs, msg)
 			}
+		case lexer.TOKEN_WRITE:
+			w := p.parseWrite()
+			step.Writes = append(step.Writes, w)
 		default:
 			p.nextToken()
 		}

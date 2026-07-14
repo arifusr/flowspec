@@ -108,6 +108,8 @@ const (
 	TOKEN_REPORT_DIR
 	TOKEN_SPEC
 	TOKEN_COOKIE
+	TOKEN_WRITE
+	TOKEN_TO
 
 	// HTTP methods
 	TOKEN_GET
@@ -190,6 +192,8 @@ var keywords = map[string]TokenType{
 	"report_dir":  TOKEN_REPORT_DIR,
 	"spec":        TOKEN_SPEC,
 	"cookie":      TOKEN_COOKIE,
+	"write":       TOKEN_WRITE,
+	"to":          TOKEN_TO,
 	"GET":         TOKEN_GET,
 	"POST":        TOKEN_POST,
 	"PUT":         TOKEN_PUT,

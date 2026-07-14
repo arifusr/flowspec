@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 )
 
@@ -139,18 +138,15 @@ func BuildRequest(method, rawURL string, headers map[string]string,
 }
 
 func tryParseValue(s string) interface{} {
+	// Only coerce explicit boolean keywords
 	if s == "true" {
 		return true
 	}
 	if s == "false" {
 		return false
 	}
-	// try int
-	if !strings.Contains(s, ".") && len(s) > 0 && s[0] >= '0' && s[0] <= '9' {
-		var n int
-		if _, err := fmt.Sscanf(s, "%d", &n); err == nil {
-			return n
-		}
-	}
+	// Everything else stays as string — no implicit numeric coercion.
+	// If a value looks like a number but was written in quotes ("320301"),
+	// it should remain a JSON string to match strict-typed backends.
 	return s
 }
