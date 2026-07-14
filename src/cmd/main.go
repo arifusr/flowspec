@@ -9,7 +9,7 @@ import (
 	"github.com/testing-cli/apitest/internal/cli"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -77,6 +77,25 @@ func main() {
 	case "--version", "version":
 		fmt.Printf("apitest v%s\n", version)
 		fmt.Println("Documentation: https://github.com/arifusr/flowspec")
+
+	case "schema":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: apitest schema <generate|list> ...")
+			os.Exit(2)
+		}
+		subCmd := os.Args[2]
+		switch subCmd {
+		case "generate":
+			if len(os.Args) < 4 {
+				fmt.Fprintln(os.Stderr, "Usage: apitest schema generate <schema-file.json>")
+				os.Exit(2)
+			}
+			exitCode := cli.RunSchemaGenerate(os.Args[3])
+			os.Exit(exitCode)
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown schema subcommand: %s\n", subCmd)
+			os.Exit(2)
+		}
 
 	case "--help", "help", "-h":
 		if len(os.Args) > 2 {

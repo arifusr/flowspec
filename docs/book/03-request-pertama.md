@@ -126,8 +126,29 @@ apitest run requests/posts/get-post.flow --env dev --var post_id=1
 Atau dari dalam flow (Bab 7):
 
 ```flow
-run GetPost(1)
+// Literal value — langsung masukkan angka/string
+run GetPost("1")
+run GetPost("42")
+
+// Variable — isi dari extract atau let
+let my_id = "5"
+run GetPost(my_id)
+
+// Dari step sebelumnya (extract)
 run GetPost(post_id)
+```
+
+💡 **Tip:** Parameterized request sangat powerful untuk menghindari duplikasi file. Satu request bisa dipanggil berkali-kali dengan argument berbeda — misalnya dropdown yang sama tapi filter berbeda:
+
+```flow
+request GetUserRole(role_id) {
+  GET "{{base_url}}/combo/user-role?q=&role={{role_id}}"
+  expect status 200
+}
+
+// Dari flow:
+step "PIC Product"   { run GetUserRole("8") }
+step "PIC Packaging" { run GetUserRole("9") }
 ```
 
 ---

@@ -1,0 +1,14 @@
+{
+  "$id": "post-with-comments",
+  "type": "object",
+  "properties": {
+    "title":    { "type": "string", "example": "My Post" },
+    "body":     { "type": "string", "example": "Post content" },
+    "userId":   { "type": "integer", "default": 1 },
+    "comments": {
+      "type": "array",
+      "items": { "$ref": "comment.schema.json" }
+    }
+  },
+  "required": ["title", "body", "userId"]
+}

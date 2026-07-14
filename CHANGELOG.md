@@ -6,6 +6,49 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 ---
 
+## [0.3.0] — 2026-07-14
+
+### Added
+
+- **Schema-driven payload (`body from schema`)** — Generate request body dari JSON Schema file. Schema menggunakan `default` dan `example` values untuk menghasilkan payload lengkap.
+  ```flow
+  request StoreBom {
+    POST "{{base_url}}/bom/product/store"
+    body from schema "schemas/bom-product.schema.json"
+    expect status 200
+  }
+  ```
+
+- **Deep path override (`set`)** — Override field di generated payload, termasuk nested array:
+  ```flow
+  run StoreBom {
+    body from schema "schemas/bom-product.schema.json" {
+      set company = "{{company_id}}"
+      set items[0].materialId = "312404"
+      set items[0].components[0].qty = "500"
+    }
+  }
+  ```
+
+- **Schema response validation (`expect schema`)** — Validate response body terhadap JSON Schema:
+  ```flow
+  expect schema "schemas/user-response.schema.json"
+  ```
+  Error message menunjukkan violation spesifik (missing required field, wrong type, dll).
+
+- **`$ref` resolution** — Schema bisa referensi schema lain via `$ref`, otomatis di-resolve:
+  ```json
+  { "items": { "type": "array", "items": { "$ref": "bom-item.schema.json" } } }
+  ```
+
+- **`apitest schema generate <file>`** — CLI command untuk preview generated JSON dari schema.
+
+### Changed
+
+- Versi naik ke 0.3.0
+
+---
+
 ## [0.2.0] — 2026-07-14
 
 ### Added
@@ -41,9 +84,33 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 - **Project config directory loading** — `apitest` membaca `apitest.flow` dan memuat directory yang dideklarasikan (misal `requests from "custom-path/"`).
 
+- **Parameterized request** — Request bisa menerima parameter dan dipanggil dengan literal atau variable:
+  ```flow
+  request GetUserRole(role_id) {
+    GET "{{base_url}}/combo/user-role?q=&role={{role_id}}"
+  }
+
+  // Pemanggilan dari flow:
+  step "Product role"   { run GetUserRole("8") }
+  step "Packaging role" { run GetUserRole("9") }
+  step "Dynamic"        { run GetUserRole(extracted_var) }
+  ```
+
+- **Query override di `run` block** — Override/tambah query parameter tanpa buat file request baru:
+  ```flow
+  step "Search" {
+    run ListUsers {
+      query role = "admin"
+      query page = "2"
+    }
+  }
+  ```
+
 ### Fixed
 
-- **Flow tidak bisa resolve request by name** — Sebelumnya `run Login` dalam flow menghasilkan `unknown request 'Login'` meskipun request valid. Sekarang semua request di `requests/` dan `shared/` otomatis ter-load.
+- **Flow tidak bisa resolve request by name** — Sebelumnya `run Login` dalam flow menghasilkan `unknown request 'Login'`. Sekarang semua request di `requests/` dan `shared/` otomatis ter-load.
+
+- **`let` sebelum `run` tidak ter-resolve saat dipakai sebagai parameter** — `let x = "5"` lalu `run GetUser(x)` sekarang bekerja dengan benar.
 
 ### Changed
 

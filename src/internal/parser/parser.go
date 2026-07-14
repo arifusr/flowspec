@@ -412,6 +412,51 @@ func (p *Parser) parseBodyDecl() *ast.BodyDecl {
 	pos := p.curPos()
 	p.nextToken() // skip 'body'
 	body := &ast.BodyDecl{Position: pos}
+
+	// Check for `body from schema "path"` syntax
+	if p.curToken.Type == lexer.TOKEN_FROM {
+		p.nextToken() // skip 'from'
+		// Expect 'schema' keyword or ident
+		if p.curToken.Literal == "schema" {
+			p.nextToken() // skip 'schema'
+		}
+		body.Type = "schema"
+		body.SchemaPath = p.curToken.Literal
+		p.nextToken() // skip path string
+
+		// Optional override block { set ... }
+		if p.curToken.Type == lexer.TOKEN_LBRACE {
+			body.SetOverrides = make(map[string]string)
+			p.nextToken() // skip {
+			for p.curToken.Type != lexer.TOKEN_RBRACE && p.curToken.Type != lexer.TOKEN_EOF {
+				if p.curToken.Type == lexer.TOKEN_SET || p.curToken.Literal == "set" {
+					p.nextToken() // skip 'set'
+					// Read path (may contain dots and brackets)
+					var pathParts []string
+					for p.curToken.Type != lexer.TOKEN_ASSIGN &&
+						p.curToken.Type != lexer.TOKEN_RBRACE &&
+						p.curToken.Type != lexer.TOKEN_EOF {
+						pathParts = append(pathParts, p.curToken.Literal)
+						p.nextToken()
+					}
+					path := strings.Join(pathParts, "")
+					if p.curToken.Type == lexer.TOKEN_ASSIGN {
+						p.nextToken() // skip =
+					}
+					value := p.curToken.Literal
+					p.nextToken() // skip value
+					body.SetOverrides[path] = value
+				} else {
+					p.nextToken()
+				}
+			}
+			if p.curToken.Type == lexer.TOKEN_RBRACE {
+				p.nextToken() // skip }
+			}
+		}
+		return body
+	}
+
 	body.Type = p.curToken.Literal // json, form, raw, multipart
 	p.nextToken()                  // skip type
 
@@ -603,9 +648,17 @@ func (p *Parser) parseExpect() *ast.ExpectDecl {
 		p.nextToken()
 
 	default:
-		p.addError(fmt.Sprintf("unknown expect type %q", p.curToken.Literal))
-		p.nextToken()
-		return nil
+		// Handle 'schema' as expect type (not a keyword token)
+		if p.curToken.Literal == "schema" {
+			exp.Type = "schema"
+			p.nextToken()                  // skip 'schema'
+			exp.Value = p.curToken.Literal // schema file path
+			p.nextToken()
+		} else {
+			p.addError(fmt.Sprintf("unknown expect type %q", p.curToken.Literal))
+			p.nextToken()
+			return nil
+		}
 	}
 
 	return exp
@@ -943,6 +996,9 @@ func (p *Parser) parseRequestOverride() *ast.RequestOverride {
 		case lexer.TOKEN_HEADER:
 			h := p.parseHeader()
 			override.Headers = append(override.Headers, h)
+		case lexer.TOKEN_QUERY:
+			q := p.parseQuery()
+			override.Queries = append(override.Queries, q)
 		case lexer.TOKEN_EXPECT:
 			exp := p.parseExpect()
 			if exp != nil {

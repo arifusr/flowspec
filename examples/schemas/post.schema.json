@@ -1,0 +1,10 @@
+{
+  "$id": "post",
+  "type": "object",
+  "properties": {
+    "title":  { "type": "string", "example": "Sample Post" },
+    "body":   { "type": "string", "example": "This is a sample body" },
+    "userId": { "type": "integer", "default": 1 }
+  },
+  "required": ["title", "body", "userId"]
+}

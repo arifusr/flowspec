@@ -137,6 +137,8 @@ apitest dsl show flows/user-crud.flow --env dev   # preview resolved
 - **`@tags` / `@env`** — metadata deklaratif
 - **`log("...")`** — debug print variable/data ke console
 - **`last.json("$[?(@.field=='value')]")`** — search/filter di array JSON response
+- **`body from schema "path.json"`** — generate body dari JSON Schema + deep override via `set`
+- **`expect schema "path.json"`** — validate response terhadap JSON Schema
 - **Auto-discovery** — flow resolve request by name tanpa `import`
 
 Spesifikasi lengkap: [`docs/flowspec-dsl.md`](docs/flowspec-dsl.md) · Contoh: [`examples/`](examples/)

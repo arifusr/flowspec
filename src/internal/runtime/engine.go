@@ -10,6 +10,7 @@ import (
 
 	"github.com/testing-cli/apitest/internal/ast"
 	"github.com/testing-cli/apitest/internal/parser"
+	"github.com/testing-cli/apitest/internal/schema"
 )
 
 // Engine executes FlowSpec AST nodes.
@@ -160,7 +161,16 @@ func (e *Engine) ExecuteRequest(req *ast.RequestDecl) StepResult {
 		}
 	}
 
+	var schemaBody []byte
+	if bodyType == "schema" && req.Body.SchemaPath != "" {
+		schemaBody = e.buildSchemaBody(req.Body)
+	}
+
 	httpReq := BuildRequest(req.Method, req.URL, headers, queries, bodyType, bodyFields, e.Vars, e.Timeout)
+	if schemaBody != nil {
+		httpReq.Body = schemaBody
+		httpReq.Headers["Content-Type"] = "application/json"
+	}
 	result.Method = httpReq.Method
 	result.URL = httpReq.URL
 
@@ -299,15 +309,25 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 
 	// Handle run
 	if step.Run != nil {
-		result := e.executeRun(step.Run, step.Name)
-
-		// Handle let statements after run (so last.json works)
+		// Process let statements that DON'T reference last.* BEFORE run
 		for _, l := range step.Lets {
-			val := e.resolveLetValue(l.Value)
-			e.Vars.Set(l.Name, val)
+			if !strings.HasPrefix(strings.TrimSpace(l.Value), "last.") {
+				val := e.resolveLetValue(l.Value)
+				e.Vars.Set(l.Name, val)
+			}
 		}
 
-		// Execute log statements after run (so last.json and let vars work)
+		result := e.executeRun(step.Run, step.Name)
+
+		// Process let statements that reference last.* AFTER run
+		for _, l := range step.Lets {
+			if strings.HasPrefix(strings.TrimSpace(l.Value), "last.") {
+				val := e.resolveLetValue(l.Value)
+				e.Vars.Set(l.Name, val)
+			}
+		}
+
+		// Execute log statements after run (so all vars work)
 		for _, msg := range step.Logs {
 			resolved := e.Vars.Interpolate(msg)
 			fmt.Printf("  📋 log: %s\n", resolved)
@@ -321,7 +341,7 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 
 		results = append(results, result)
 	} else {
-		// No run — process lets and logs with current state
+		// No run — process all lets and logs with current state
 		for _, l := range step.Lets {
 			val := e.resolveLetValue(l.Value)
 			e.Vars.Set(l.Name, val)
@@ -389,8 +409,26 @@ func (e *Engine) prepareRequest(def *ast.RequestDecl, run *ast.RunDecl) *ast.Req
 		if run.Override.Body != nil {
 			if req.Body == nil {
 				req.Body = run.Override.Body
+			} else if run.Override.Body.Type == "schema" {
+				// Schema override: replace body entirely or merge SetOverrides
+				if req.Body.Type == "schema" {
+					// Merge set overrides into existing schema body
+					if req.Body.SetOverrides == nil {
+						req.Body.SetOverrides = make(map[string]string)
+					}
+					for k, v := range run.Override.Body.SetOverrides {
+						req.Body.SetOverrides[k] = v
+					}
+					// If override has different schema path, use it
+					if run.Override.Body.SchemaPath != "" {
+						req.Body.SchemaPath = run.Override.Body.SchemaPath
+					}
+				} else {
+					// Replace non-schema body with schema body
+					req.Body = run.Override.Body
+				}
 			} else {
-				// Merge body fields
+				// Merge body fields (json/form)
 				for _, f := range run.Override.Body.Fields {
 					found := false
 					for i, existing := range req.Body.Fields {
@@ -408,6 +446,9 @@ func (e *Engine) prepareRequest(def *ast.RequestDecl, run *ast.RunDecl) *ast.Req
 		}
 		if len(run.Override.Headers) > 0 {
 			req.Headers = append(req.Headers, run.Override.Headers...)
+		}
+		if len(run.Override.Queries) > 0 {
+			req.Queries = append(req.Queries, run.Override.Queries...)
 		}
 		if len(run.Override.Expects) > 0 {
 			req.Expects = append(req.Expects, run.Override.Expects...)
@@ -504,6 +545,39 @@ func hasFailure(results []StepResult) bool {
 		}
 	}
 	return false
+}
+
+// buildSchemaBody loads a JSON Schema, generates payload, applies overrides.
+func (e *Engine) buildSchemaBody(body *ast.BodyDecl) []byte {
+	schemaPath := e.Vars.Interpolate(body.SchemaPath)
+	// Resolve relative to project base
+	if !filepath.IsAbs(schemaPath) {
+		schemaPath = filepath.Join(e.BaseDir, schemaPath)
+	}
+
+	s, err := schema.LoadSchema(schemaPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ⚠ Schema error: %s\n", err)
+		return nil
+	}
+
+	payload := schema.GeneratePayload(s)
+
+	// Apply set overrides with variable interpolation
+	if body.SetOverrides != nil {
+		resolvedOverrides := make(map[string]string)
+		for k, v := range body.SetOverrides {
+			resolvedOverrides[k] = e.Vars.Interpolate(v)
+		}
+		payload = schema.ApplyOverrides(payload, resolvedOverrides)
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ⚠ Schema marshal error: %s\n", err)
+		return nil
+	}
+	return data
 }
 
 // resolveLetValue resolves a let value, handling special syntax:

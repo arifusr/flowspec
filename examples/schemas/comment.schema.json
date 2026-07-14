@@ -1,0 +1,10 @@
+{
+  "$id": "comment",
+  "type": "object",
+  "properties": {
+    "name":  { "type": "string", "example": "Test Comment" },
+    "email": { "type": "string", "example": "test@example.com" },
+    "body":  { "type": "string", "example": "Great post!" }
+  },
+  "required": ["name", "email", "body"]
+}

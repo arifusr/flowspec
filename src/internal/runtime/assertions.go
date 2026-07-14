@@ -3,11 +3,14 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/testing-cli/apitest/internal/ast"
+	"github.com/testing-cli/apitest/internal/schema"
 )
 
 // AssertionResult represents the result of a single assertion.
@@ -32,6 +35,8 @@ func EvalExpect(exp *ast.ExpectDecl, resp *HTTPResponse, vars *Variables) Assert
 		return evalTimeExpect(exp, resp)
 	case "size":
 		return evalSizeExpect(exp, resp)
+	case "schema":
+		return evalSchemaExpect(exp, resp, vars)
 	default:
 		return AssertionResult{
 			Passed:  false,
@@ -310,6 +315,46 @@ func evalSizeExpect(exp *ast.ExpectDecl, resp *HTTPResponse) AssertionResult {
 	if !result.Passed {
 		result.Message = fmt.Sprintf("expect size %s %s, got %d bytes",
 			exp.Operator, exp.Size, actual)
+	}
+	return result
+}
+
+func evalSchemaExpect(exp *ast.ExpectDecl, resp *HTTPResponse, vars *Variables) AssertionResult {
+	result := AssertionResult{Soft: exp.Soft}
+	schemaPath := vars.Interpolate(exp.Value)
+
+	// Try to resolve relative path
+	// First check as-is, then relative to CWD
+	if _, err := os.Stat(schemaPath); err != nil {
+		// Try from working directory
+		cwd, _ := os.Getwd()
+		schemaPath = filepath.Join(cwd, schemaPath)
+	}
+
+	s, err := schema.LoadSchema(schemaPath)
+	if err != nil {
+		result.Passed = false
+		result.Message = fmt.Sprintf("expect schema: cannot load %s: %s", exp.Value, err)
+		return result
+	}
+
+	var body interface{}
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		result.Passed = false
+		result.Message = fmt.Sprintf("expect schema: response is not valid JSON: %s", err)
+		return result
+	}
+
+	errors := schema.ValidateAgainstSchema(body, s)
+	if len(errors) == 0 {
+		result.Passed = true
+		result.Message = fmt.Sprintf("expect schema %q — valid", exp.Value)
+	} else {
+		result.Passed = false
+		result.Expected = "valid against schema"
+		result.Actual = fmt.Sprintf("%d violation(s)", len(errors))
+		result.Message = fmt.Sprintf("expect schema %q — %d violation(s):\n      %s",
+			exp.Value, len(errors), strings.Join(errors, "\n      "))
 	}
 	return result
 }

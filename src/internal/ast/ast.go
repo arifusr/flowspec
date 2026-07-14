@@ -100,11 +100,13 @@ func (r *RequestDecl) Pos() Position { return r.Position }
 
 // BodyDecl represents request body.
 type BodyDecl struct {
-	Position    Position
-	Type        string      // json, form, multipart, raw
-	Fields      []BodyField // for json/form/multipart
-	RawContent  string      // for raw body
-	ContentType string      // for raw body content type
+	Position     Position
+	Type         string            // json, form, multipart, raw, schema
+	Fields       []BodyField       // for json/form/multipart
+	RawContent   string            // for raw body
+	ContentType  string            // for raw body content type
+	SchemaPath   string            // for body from schema "path"
+	SetOverrides map[string]string // for schema set overrides
 }
 
 // BodyField is a key-value in body.
@@ -200,6 +202,7 @@ type RunDecl struct {
 type RequestOverride struct {
 	Body    *BodyDecl
 	Headers []HeaderDecl
+	Queries []QueryDecl
 	Expects []ExpectDecl
 }
 
