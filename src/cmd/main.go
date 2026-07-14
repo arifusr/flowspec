@@ -76,6 +76,7 @@ func main() {
 
 	case "--version", "version":
 		fmt.Printf("apitest v%s\n", version)
+		fmt.Println("Documentation: https://github.com/arifusr/flowspec")
 
 	case "--help", "help", "-h":
 		if len(os.Args) > 2 {
@@ -236,6 +237,7 @@ Examples:
   apitest import curl --file curls.txt --output-dir requests/
   apitest dsl lint .
 
+Documentation: https://github.com/arifusr/flowspec
 `, version)
 }
 
