@@ -1,0 +1,8 @@
+@tags(users, smoke)
+
+request GetUsers {
+  GET "{{base_url}}/users"
+
+  expect status 200
+  expect json "$" is array
+}

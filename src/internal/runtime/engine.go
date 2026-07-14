@@ -14,17 +14,18 @@ import (
 
 // Engine executes FlowSpec AST nodes.
 type Engine struct {
-	Vars      *Variables
-	Client    *HTTPClient
-	Requests  map[string]*ast.RequestDecl
-	Auths     map[string]*ast.AuthDecl
-	Fragments map[string]*ast.FragmentDecl
-	Results   []StepResult
-	BaseDir   string
-	Verbose   int
-	FailFast  bool
-	Timeout   time.Duration
-	Redact    []string
+	Vars         *Variables
+	Client       *HTTPClient
+	Requests     map[string]*ast.RequestDecl
+	Auths        map[string]*ast.AuthDecl
+	Fragments    map[string]*ast.FragmentDecl
+	Results      []StepResult
+	LastResponse *HTTPResponse
+	BaseDir      string
+	Verbose      int
+	FailFast     bool
+	Timeout      time.Duration
+	Redact       []string
 }
 
 // StepResult records the outcome of a single step.
@@ -174,6 +175,9 @@ func (e *Engine) ExecuteRequest(req *ast.RequestDecl) StepResult {
 	result.StatusCode = resp.StatusCode
 	result.Duration = resp.Duration
 
+	// Store last response for last.json() / last.header()
+	e.LastResponse = resp
+
 	// Run assertions
 	allPassed := true
 	for i := range req.Expects {
@@ -293,14 +297,21 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 		time.Sleep(dur)
 	}
 
-	// Handle let statements
-	for _, l := range step.Lets {
-		e.Vars.Set(l.Name, e.Vars.Interpolate(l.Value))
-	}
-
 	// Handle run
 	if step.Run != nil {
 		result := e.executeRun(step.Run, step.Name)
+
+		// Handle let statements after run (so last.json works)
+		for _, l := range step.Lets {
+			val := e.resolveLetValue(l.Value)
+			e.Vars.Set(l.Name, val)
+		}
+
+		// Execute log statements after run (so last.json and let vars work)
+		for _, msg := range step.Logs {
+			resolved := e.Vars.Interpolate(msg)
+			fmt.Printf("  📋 log: %s\n", resolved)
+		}
 
 		// Additional step-level expects
 		if result.Passed && len(step.Expects) > 0 {
@@ -309,6 +320,17 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 		}
 
 		results = append(results, result)
+	} else {
+		// No run — process lets and logs with current state
+		for _, l := range step.Lets {
+			val := e.resolveLetValue(l.Value)
+			e.Vars.Set(l.Name, val)
+		}
+
+		for _, msg := range step.Logs {
+			resolved := e.Vars.Interpolate(msg)
+			fmt.Printf("  📋 log: %s\n", resolved)
+		}
 	}
 
 	// Handle retry
@@ -482,4 +504,52 @@ func hasFailure(results []StepResult) bool {
 		}
 	}
 	return false
+}
+
+// resolveLetValue resolves a let value, handling special syntax:
+// - last.json("$.path") → extract from last response body
+// - last.header("Name") → extract from last response header
+// - last.status → last response status code
+// - regular string → interpolate variables
+func (e *Engine) resolveLetValue(value string) string {
+	value = strings.TrimSpace(value)
+
+	// last.json("$.path")
+	if strings.HasPrefix(value, "last.json(") && strings.HasSuffix(value, ")") {
+		path := value[10 : len(value)-1]
+		path = strings.Trim(path, "\"'")
+		if e.LastResponse == nil {
+			return ""
+		}
+		var body interface{}
+		if err := json.Unmarshal(e.LastResponse.Body, &body); err != nil {
+			return ""
+		}
+		result, found := evalJSONPath(body, path)
+		if !found {
+			return ""
+		}
+		return fmt.Sprintf("%v", result)
+	}
+
+	// last.header("Name")
+	if strings.HasPrefix(value, "last.header(") && strings.HasSuffix(value, ")") {
+		name := value[12 : len(value)-1]
+		name = strings.Trim(name, "\"'")
+		if e.LastResponse == nil {
+			return ""
+		}
+		return e.LastResponse.Headers.Get(name)
+	}
+
+	// last.status
+	if value == "last.status" {
+		if e.LastResponse == nil {
+			return ""
+		}
+		return fmt.Sprintf("%d", e.LastResponse.StatusCode)
+	}
+
+	// Regular value — interpolate
+	return e.Vars.Interpolate(value)
 }

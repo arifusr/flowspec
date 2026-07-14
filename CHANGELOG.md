@@ -6,6 +6,51 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 ---
 
+## [0.2.0] — 2026-07-14
+
+### Added
+
+- **`log()` statement** — Print debug message ke console saat step dijalankan. Berguna untuk inspect variable dan data yang di-extract.
+  ```flow
+  step "Login" {
+    run Login
+    log("Token: {{access_token}}")
+  }
+  ```
+
+- **JSONPath filter expression `$[?(@.field=='value')]`** — Search/filter di array JSON. Temukan item berdasarkan field value, lalu extract data darinya.
+  ```flow
+  let company_id = last.json("$.data[?(@.name=='PT ABC')].id")
+  ```
+  Operator yang didukung: `==`, `!=`, `>`, `>=`, `<`, `<=`.
+
+- **`let x = last.json("$.path")`** — Extract value dari response terakhir langsung di step, termasuk support filter expression.
+  ```flow
+  step "Get users" {
+    run GetUsers
+    let admin = last.json("$[?(@.role=='admin')].name")
+    log("Admin: {{admin}}")
+  }
+  ```
+
+- **`let x = last.header("Name")`** — Extract response header inline di step.
+
+- **`let x = last.status`** — Ambil status code response terakhir sebagai variable.
+
+- **Auto-discovery request** — Flow otomatis menemukan request by name dari folder `requests/` dan `shared/` tanpa perlu `import` statement.
+
+- **Project config directory loading** — `apitest` membaca `apitest.flow` dan memuat directory yang dideklarasikan (misal `requests from "custom-path/"`).
+
+### Fixed
+
+- **Flow tidak bisa resolve request by name** — Sebelumnya `run Login` dalam flow menghasilkan `unknown request 'Login'` meskipun request valid. Sekarang semua request di `requests/` dan `shared/` otomatis ter-load.
+
+### Changed
+
+- Versi naik ke 0.2.0
+
+---
+
 ## [0.1.1] — 2026-07-14
 
 ### Fixed

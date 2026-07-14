@@ -84,8 +84,8 @@ type RequestDecl struct {
 	Params     []string // request parameters e.g. request GetUser(user_id)
 	Extends    string   // parent request name if extends
 	Tags       []string
-	UseAuth    string   // `use auth BearerAuth`
-	Method     string   // GET, POST, etc.
+	UseAuth    string // `use auth BearerAuth`
+	Method     string // GET, POST, etc.
 	URL        string
 	Headers    []HeaderDecl
 	Queries    []QueryDecl
@@ -101,10 +101,10 @@ func (r *RequestDecl) Pos() Position { return r.Position }
 // BodyDecl represents request body.
 type BodyDecl struct {
 	Position    Position
-	Type        string            // json, form, multipart, raw
-	Fields      []BodyField       // for json/form/multipart
-	RawContent  string            // for raw body
-	ContentType string            // for raw body content type
+	Type        string      // json, form, multipart, raw
+	Fields      []BodyField // for json/form/multipart
+	RawContent  string      // for raw body
+	ContentType string      // for raw body content type
 }
 
 // BodyField is a key-value in body.
@@ -122,9 +122,9 @@ type ExpectDecl struct {
 	StatusCodes []int
 	StatusRange string // "2xx"
 	// JSON assertions
-	JSONPath  string
-	Operator  string // ==, !=, exists, not exists, is, length, matches, >=, <=, >, <, contains
-	Value     string
+	JSONPath string
+	Operator string // ==, !=, exists, not exists, is, length, matches, >=, <=, >, <, contains
+	Value    string
 	// Header assertions
 	HeaderName string
 	// Time/size assertions
@@ -172,17 +172,18 @@ type LetDecl struct {
 
 // StepDecl represents a `step "name" { ... }` block.
 type StepDecl struct {
-	Position  Position
-	Name      string
-	When      string // condition for `when`
-	Unless    string // condition for `unless`
-	Run       *RunDecl
-	Expects   []ExpectDecl
-	Lets      []LetDecl
-	Wait      string // e.g. "3s"
-	Retry     *RetryDecl
-	Repeat    *RepeatDecl
-	ForLoop   *ForLoopDecl
+	Position Position
+	Name     string
+	When     string // condition for `when`
+	Unless   string // condition for `unless`
+	Run      *RunDecl
+	Expects  []ExpectDecl
+	Lets     []LetDecl
+	Logs     []string // log("message") statements
+	Wait     string   // e.g. "3s"
+	Retry    *RetryDecl
+	Repeat   *RepeatDecl
+	ForLoop  *ForLoopDecl
 }
 
 func (s *StepDecl) Pos() Position { return s.Position }

@@ -368,6 +368,32 @@ step "Login" {
 
 Keyword `last` merujuk response step terakhir — data flow eksplisit dan terbaca.
 
+### Filter Array — JSONPath Filter Expression
+
+Cari item di array berdasarkan field value:
+
+```flow
+step "Get dropdown" {
+  run GetCompanyList
+  // Response: [{"id": 5, "name": "PT ABC"}, {"id": 8, "name": "PT XYZ"}]
+  let company_id = last.json("$[?(@.name=='PT ABC')].id")
+}
+```
+
+Operator filter: `==`, `!=`, `>`, `>=`, `<`, `<=`
+
+### Debug Print — `log()`
+
+```flow
+step "Login" {
+  run Login
+  let token = last.json("$.token")
+  log("Extracted token: {{token}}")
+}
+```
+
+Output: `📋 log: Extracted token: eyJhbG...`
+
 ---
 
 ## 7. Control Flow

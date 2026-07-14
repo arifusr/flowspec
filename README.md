@@ -135,6 +135,9 @@ apitest dsl show flows/user-crud.flow --env dev   # preview resolved
 - **`retry N times every Xs until ...`** — polling/assertion retry built-in
 - **`extends`** — inheritance request
 - **`@tags` / `@env`** — metadata deklaratif
+- **`log("...")`** — debug print variable/data ke console
+- **`last.json("$[?(@.field=='value')]")`** — search/filter di array JSON response
+- **Auto-discovery** — flow resolve request by name tanpa `import`
 
 Spesifikasi lengkap: [`docs/flowspec-dsl.md`](docs/flowspec-dsl.md) · Contoh: [`examples/`](examples/)
 

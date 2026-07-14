@@ -124,7 +124,72 @@ flow LoginAndBrowse {
 
 ---
 
-## 6.6 Contoh Lengkap: Login → CRUD
+## 6.6 Filter di Array — Cari Item Spesifik
+
+Sering kali API mengembalikan array (misalnya dropdown, list). Kamu butuh **satu item spesifik** berdasarkan value field-nya.
+
+Gunakan **filter expression** `[?(@.field=='value')]`:
+
+```flow
+step "Get company dropdown" {
+  run GetCompanyList
+  // Response: [{"id": 5, "name": "PT ABC"}, {"id": 8, "name": "PT XYZ"}]
+
+  let company_id   = last.json("$[?(@.name=='PT ABC')].id")
+  let company_name = last.json("$[?(@.name=='PT ABC')].name")
+  log("Dipilih: {{company_name}} (id={{company_id}})")
+}
+```
+
+**Operator filter yang didukung:**
+
+| Operator | Contoh | Arti |
+|---|---|---|
+| `==` | `$[?(@.name=='Alice')]` | Sama dengan |
+| `!=` | `$[?(@.status!='deleted')]` | Tidak sama |
+| `>` | `$[?(@.price>100)]` | Lebih besar |
+| `>=` | `$[?(@.stock>=10)]` | Lebih besar atau sama |
+| `<` | `$[?(@.age<30)]` | Lebih kecil |
+| `<=` | `$[?(@.score<=50)]` | Lebih kecil atau sama |
+
+Filter mengembalikan item **pertama** yang cocok. Kamu bisa langsung akses field-nya dengan `.fieldname` setelah filter.
+
+**Contoh nested path:**
+
+```flow
+// Response: { "data": { "items": [{"code": "IDR", "id": 1}, {"code": "USD", "id": 2}] } }
+let idr_id = last.json("$.data.items[?(@.code=='IDR')].id")
+```
+
+---
+
+## 6.7 `log()` — Debug Print Variable
+
+Gunakan `log()` untuk mencetak variable atau data ke console:
+
+```flow
+step "Login" {
+  run Login
+  let token = last.json("$.token")
+  log("Token: {{token}}")
+  log("Status: {{last.status}}")
+}
+```
+
+Output di terminal:
+
+```
+  📋 log: Token: eyJhbGciOi...
+  📋 log: Status: 200
+```
+
+💡 **Tip:** `log()` sangat berguna untuk debug saat extract tidak menghasilkan value yang diharapkan — inspect actual response data.
+
+⚠️ **Perhatian:** `log()` hanya tampil saat run biasa. Di `--quiet` mode (CI), log tetap tampil untuk membantu debug pipeline.
+
+---
+
+## 6.8 Contoh Lengkap: Login → CRUD
 
 ```flow
 // requests/auth/login.flow
@@ -251,6 +316,9 @@ Atau gunakan `auth` block (Bab 9).
 | `extract { x from json "$.path" }` | Simpan field JSON ke variable |
 | `extract { x from header "Name" }` | Simpan header ke variable |
 | `let x = last.json("$.path")` | Extract inline setelah run |
+| `let x = last.json("$[?(@.k=='v')].field")` | Filter array + extract |
+| `let x = last.header("Name")` | Extract header inline |
+| `log("message {{var}}")` | Debug print ke console |
 | `run GetUser(user_id)` | Pakai variable sebagai parameter |
 
 ---

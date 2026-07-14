@@ -734,9 +734,92 @@ func (p *Parser) parseLet() ast.LetDecl {
 	if p.curToken.Type == lexer.TOKEN_ASSIGN {
 		p.nextToken() // skip =
 	}
+
+	// Handle last.json("...") and last.header("...") expressions
+	if p.curToken.Literal == "last" || strings.HasPrefix(p.curToken.Literal, "last.") {
+		value := p.parseLastExpression()
+		return ast.LetDecl{Position: pos, Name: name, Value: value}
+	}
+
 	value := p.curToken.Literal
 	p.nextToken()
 	return ast.LetDecl{Position: pos, Name: name, Value: value}
+}
+
+// parseLastExpression parses last.json("$.path") or last.header("Name") or last.status
+func (p *Parser) parseLastExpression() string {
+	var sb strings.Builder
+
+	// Collect all tokens that form the last.xxx("...") expression
+	// Could be: last.json("$.path") — tokenized as: last . json ( "$.path" )
+	// Or tokenized as: last.json ( "$.path" ) if lexer reads last.json as one ident
+	literal := p.curToken.Literal
+	sb.WriteString(literal)
+	p.nextToken()
+
+	// If literal already contains the full expression (e.g. last.json), look for (...)
+	if strings.HasPrefix(literal, "last.") && !strings.Contains(literal, "(") {
+		// Need to read (...) part
+		if p.curToken.Type == lexer.TOKEN_LPAREN {
+			sb.WriteString("(")
+			p.nextToken() // skip (
+			// Read everything until )
+			depth := 1
+			for depth > 0 && p.curToken.Type != lexer.TOKEN_EOF {
+				if p.curToken.Type == lexer.TOKEN_LPAREN {
+					depth++
+				} else if p.curToken.Type == lexer.TOKEN_RPAREN {
+					depth--
+					if depth == 0 {
+						break
+					}
+				}
+				sb.WriteString(p.curToken.Literal)
+				p.nextToken()
+			}
+			sb.WriteString(")")
+			if p.curToken.Type == lexer.TOKEN_RPAREN {
+				p.nextToken() // skip )
+			}
+		}
+	} else if literal == "last" {
+		// last followed by .json(...) or .header(...) or .status
+		// Next should be a dot-prefixed identifier
+		if strings.HasPrefix(p.curToken.Literal, ".") || p.curToken.Type == lexer.TOKEN_DOT {
+			sb.WriteString(p.curToken.Literal)
+			p.nextToken()
+			// Now should have method name or it was already part of the token
+			if p.curToken.Type == lexer.TOKEN_IDENT || p.curToken.Type == lexer.TOKEN_JSON ||
+				p.curToken.Type == lexer.TOKEN_HEADER || p.curToken.Type == lexer.TOKEN_STATUS {
+				sb.WriteString(p.curToken.Literal)
+				p.nextToken()
+			}
+			// Parse (...) if present
+			if p.curToken.Type == lexer.TOKEN_LPAREN {
+				sb.WriteString("(")
+				p.nextToken()
+				depth := 1
+				for depth > 0 && p.curToken.Type != lexer.TOKEN_EOF {
+					if p.curToken.Type == lexer.TOKEN_LPAREN {
+						depth++
+					} else if p.curToken.Type == lexer.TOKEN_RPAREN {
+						depth--
+						if depth == 0 {
+							break
+						}
+					}
+					sb.WriteString(p.curToken.Literal)
+					p.nextToken()
+				}
+				sb.WriteString(")")
+				if p.curToken.Type == lexer.TOKEN_RPAREN {
+					p.nextToken()
+				}
+			}
+		}
+	}
+
+	return sb.String()
 }
 
 func (p *Parser) parseStep() *ast.StepDecl {
@@ -779,6 +862,18 @@ func (p *Parser) parseStep() *ast.StepDecl {
 		case lexer.TOKEN_RETRY:
 			retry := p.parseRetry()
 			step.Retry = retry
+		case lexer.TOKEN_LOG:
+			p.nextToken() // skip 'log'
+			// Expect ( "message" )
+			if p.curToken.Type == lexer.TOKEN_LPAREN {
+				p.nextToken() // skip (
+				msg := p.curToken.Literal
+				p.nextToken() // skip message string
+				if p.curToken.Type == lexer.TOKEN_RPAREN {
+					p.nextToken() // skip )
+				}
+				step.Logs = append(step.Logs, msg)
+			}
 		default:
 			p.nextToken()
 		}
