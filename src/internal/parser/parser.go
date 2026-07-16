@@ -933,14 +933,17 @@ func (p *Parser) parseStep() *ast.StepDecl {
 		case lexer.TOKEN_RUN:
 			run := p.parseRun()
 			step.Run = run
+			step.Statements = append(step.Statements, ast.StepStatement{Type: "run", Run: run})
 		case lexer.TOKEN_EXPECT:
 			exp := p.parseExpect()
 			if exp != nil {
 				step.Expects = append(step.Expects, *exp)
+				step.Statements = append(step.Statements, ast.StepStatement{Type: "expect", Expect: exp})
 			}
 		case lexer.TOKEN_LET:
 			l := p.parseLet()
 			step.Lets = append(step.Lets, l)
+			step.Statements = append(step.Statements, ast.StepStatement{Type: "let", Let: &l})
 		case lexer.TOKEN_WAIT:
 			p.nextToken() // skip 'wait'
 			step.Wait = p.curToken.Literal
@@ -959,10 +962,12 @@ func (p *Parser) parseStep() *ast.StepDecl {
 					p.nextToken() // skip )
 				}
 				step.Logs = append(step.Logs, msg)
+				step.Statements = append(step.Statements, ast.StepStatement{Type: "log", Log: msg})
 			}
 		case lexer.TOKEN_WRITE:
 			w := p.parseWrite()
 			step.Writes = append(step.Writes, w)
+			step.Statements = append(step.Statements, ast.StepStatement{Type: "write", Write: &w})
 		default:
 			p.nextToken()
 		}

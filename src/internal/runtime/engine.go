@@ -329,7 +329,12 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 		time.Sleep(dur)
 	}
 
-	// Handle run
+	// If step has ordered statements (supports multi-run), execute them in order
+	if len(step.Statements) > 0 {
+		return e.executeStatementsOrdered(step, results)
+	}
+
+	// Legacy single-run path (backward compat for steps without Statements)
 	if step.Run != nil {
 		// Process let statements that DON'T reference last.* BEFORE run
 		for _, l := range step.Lets {
@@ -349,36 +354,28 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 			}
 		}
 
-		// Execute log statements after run (so all vars work)
+		// Execute log statements
 		for _, msg := range step.Logs {
 			resolved := e.Vars.Interpolate(msg)
 			fmt.Printf("  📋 log: %s\n", resolved)
 		}
 
-		// Execute write statements after run
+		// Execute write statements
 		for _, w := range step.Writes {
 			e.executeWrite(w)
 		}
 
-		// Additional step-level expects
-		if result.Passed && len(step.Expects) > 0 {
-			// We need the last response for step-level expects
-			// For now, step expects are merged during run
-		}
-
 		results = append(results, result)
 	} else {
-		// No run — process all lets and logs with current state
+		// No run — process lets and logs
 		for _, l := range step.Lets {
 			val := e.resolveLetValue(l.Value)
 			e.Vars.Set(l.Name, val)
 		}
-
 		for _, msg := range step.Logs {
 			resolved := e.Vars.Interpolate(msg)
 			fmt.Printf("  📋 log: %s\n", resolved)
 		}
-
 		for _, w := range step.Writes {
 			e.executeWrite(w)
 		}
@@ -567,6 +564,51 @@ func (e *Engine) evalCondition(cond string) bool {
 		}
 	}
 	return true
+}
+
+// executeStatementsOrdered executes step statements in declaration order.
+// This supports multiple `run` commands with `let` extracting from each.
+func (e *Engine) executeStatementsOrdered(step *ast.StepDecl, results []StepResult) []StepResult {
+	var lastRunResult *StepResult
+
+	for _, stmt := range step.Statements {
+		switch stmt.Type {
+		case "run":
+			result := e.executeRun(stmt.Run, step.Name)
+			lastRunResult = &result
+			results = append(results, result)
+
+		case "let":
+			val := e.resolveLetValue(stmt.Let.Value)
+			e.Vars.Set(stmt.Let.Name, val)
+
+		case "log":
+			resolved := e.Vars.Interpolate(stmt.Log)
+			fmt.Printf("  📋 log: %s\n", resolved)
+
+		case "write":
+			e.executeWrite(*stmt.Write)
+
+		case "expect":
+			// Step-level expect evaluated against last response
+			if e.LastResponse != nil && stmt.Expect != nil {
+				ar := EvalExpect(stmt.Expect, e.LastResponse, e.Vars)
+				if lastRunResult != nil {
+					lastRunResult.Assertions = append(lastRunResult.Assertions, ar)
+					if !ar.Passed && !ar.Soft {
+						lastRunResult.Passed = false
+					}
+				}
+			}
+		}
+	}
+
+	// If no run was executed in statements, record a pass
+	if lastRunResult == nil && len(results) == 0 {
+		results = append(results, StepResult{Name: step.Name, Passed: true})
+	}
+
+	return results
 }
 
 func hasFailure(results []StepResult) bool {

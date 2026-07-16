@@ -9,7 +9,7 @@ set -e
 BINARY_NAME="apitest"
 SRC_DIR="src"
 BUILD_DIR="bin"
-VERSION="0.3.3"
+VERSION="0.3.4"
 
 # Colors
 GREEN='\033[0;32m'

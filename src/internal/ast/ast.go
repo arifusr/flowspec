@@ -174,22 +174,33 @@ type LetDecl struct {
 
 // StepDecl represents a `step "name" { ... }` block.
 type StepDecl struct {
-	Position Position
-	Name     string
-	When     string // condition for `when`
-	Unless   string // condition for `unless`
-	Run      *RunDecl
-	Expects  []ExpectDecl
-	Lets     []LetDecl
-	Logs     []string    // log("message") statements
-	Writes   []WriteDecl // write ... to "path" statements
-	Wait     string      // e.g. "3s"
-	Retry    *RetryDecl
-	Repeat   *RepeatDecl
-	ForLoop  *ForLoopDecl
+	Position   Position
+	Name       string
+	When       string // condition for `when`
+	Unless     string // condition for `unless`
+	Run        *RunDecl
+	Expects    []ExpectDecl
+	Lets       []LetDecl
+	Logs       []string        // log("message") statements
+	Writes     []WriteDecl     // write ... to "path" statements
+	Statements []StepStatement // ordered statements for multi-run steps
+	Wait       string          // e.g. "3s"
+	Retry      *RetryDecl
+	Repeat     *RepeatDecl
+	ForLoop    *ForLoopDecl
 }
 
 func (s *StepDecl) Pos() Position { return s.Position }
+
+// StepStatement represents a single ordered statement within a step.
+type StepStatement struct {
+	Type   string // "run", "let", "log", "write", "expect"
+	Run    *RunDecl
+	Let    *LetDecl
+	Log    string
+	Write  *WriteDecl
+	Expect *ExpectDecl
+}
 
 // WriteDecl represents `write <source> to "path"` statement.
 type WriteDecl struct {

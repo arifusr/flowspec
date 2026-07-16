@@ -6,6 +6,31 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 ---
 
+## [0.3.4] — 2026-07-16
+
+### Fixed
+
+- **Multiple `run` commands in a single step** — Steps with multiple `run` + `let` now execute in declaration order. Each `let x = last.json(...)` captures data from the immediately preceding `run`, not just the last one in the step.
+  ```flow
+  step "Get dropdowns" {
+    run GetCompany
+    let company_id = last.json("$.data[0].id")    // ← from GetCompany
+
+    run GetCountry
+    let country_id = last.json("$.data[0].id")    // ← from GetCountry
+
+    run GetCategory
+    let category = last.json("$.data[0].id")      // ← from GetCategory
+  }
+  ```
+  Previously only the last `run`'s response was accessible. Now all variables are captured correctly.
+
+### Changed
+
+- Versi naik ke 0.3.4
+
+---
+
 ## [0.3.3] — 2026-07-16
 
 ### Fixed
