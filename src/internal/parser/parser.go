@@ -402,6 +402,12 @@ func (p *Parser) parseRequestBody(req *ast.RequestDecl) {
 		case lexer.TOKEN_EXTRACT:
 			extracts := p.parseExtractBlock()
 			req.Extracts = append(req.Extracts, extracts...)
+		case lexer.TOKEN_BEFORE:
+			hooks := p.parseHookBlock()
+			req.BeforeHook = append(req.BeforeHook, hooks...)
+		case lexer.TOKEN_AFTER:
+			hooks := p.parseHookBlock()
+			req.AfterHook = append(req.AfterHook, hooks...)
 		default:
 			p.nextToken()
 		}
@@ -707,6 +713,66 @@ func (p *Parser) parseExtractBlock() []ast.ExtractDecl {
 		p.nextToken()
 	}
 	return extracts
+}
+
+// parseHookBlock parses `before { ... }` or `after { ... }` blocks.
+// Supports: set key = "value", log("message"), script "path"
+func (p *Parser) parseHookBlock() []ast.HookStatement {
+	var hooks []ast.HookStatement
+	p.nextToken() // skip 'before' or 'after'
+
+	// Handle `before script "path"` (no block)
+	if p.curToken.Type == lexer.TOKEN_SCRIPT {
+		p.nextToken() // skip 'script'
+		hooks = append(hooks, ast.HookStatement{
+			Position: p.curPos(),
+			Type:     "script",
+			Value:    p.curToken.Literal,
+		})
+		p.nextToken() // skip path
+		return hooks
+	}
+
+	if p.curToken.Type != lexer.TOKEN_LBRACE {
+		return hooks
+	}
+	p.nextToken() // skip {
+
+	for p.curToken.Type != lexer.TOKEN_RBRACE && p.curToken.Type != lexer.TOKEN_EOF {
+		switch p.curToken.Type {
+		case lexer.TOKEN_SET:
+			pos := p.curPos()
+			p.nextToken() // skip 'set'
+			key := p.curToken.Literal
+			p.nextToken() // skip key
+			if p.curToken.Type == lexer.TOKEN_ASSIGN {
+				p.nextToken() // skip =
+			}
+			value := p.curToken.Literal
+			p.nextToken() // skip value
+			hooks = append(hooks, ast.HookStatement{Position: pos, Type: "set", Key: key, Value: value})
+
+		case lexer.TOKEN_LOG:
+			pos := p.curPos()
+			p.nextToken() // skip 'log'
+			if p.curToken.Type == lexer.TOKEN_LPAREN {
+				p.nextToken() // skip (
+				msg := p.curToken.Literal
+				p.nextToken() // skip message
+				if p.curToken.Type == lexer.TOKEN_RPAREN {
+					p.nextToken() // skip )
+				}
+				hooks = append(hooks, ast.HookStatement{Position: pos, Type: "log", Value: msg})
+			}
+
+		default:
+			p.nextToken()
+		}
+	}
+	if p.curToken.Type == lexer.TOKEN_RBRACE {
+		p.nextToken() // skip }
+	}
+	return hooks
 }
 
 func (p *Parser) parseFlow(tags []string, envTag string) *ast.FlowDecl {

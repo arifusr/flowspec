@@ -167,6 +167,16 @@ func (e *Engine) ExecuteRequest(req *ast.RequestDecl) StepResult {
 		schemaBody = e.buildSchemaBody(req.Body)
 	}
 
+	// Execute before hooks
+	for _, hook := range req.BeforeHook {
+		switch hook.Type {
+		case "set":
+			e.Vars.Set(hook.Key, e.Vars.Interpolate(hook.Value))
+		case "log":
+			fmt.Printf("  📋 before: %s\n", e.interpolateWithLast(hook.Value))
+		}
+	}
+
 	httpReq := BuildRequest(req.Method, req.URL, headers, queries, bodyType, bodyFields, e.Vars, e.Timeout)
 	if schemaBody != nil {
 		httpReq.Body = schemaBody
@@ -217,6 +227,16 @@ func (e *Engine) ExecuteRequest(req *ast.RequestDecl) StepResult {
 			}
 		} else if e.Verbose >= 2 {
 			fmt.Printf("    ⚠ extract %s = (empty)\n", ext.Variable)
+		}
+	}
+
+	// Execute after hooks
+	for _, hook := range req.AfterHook {
+		switch hook.Type {
+		case "set":
+			e.Vars.Set(hook.Key, e.Vars.Interpolate(hook.Value))
+		case "log":
+			fmt.Printf("  📋 after: %s\n", e.interpolateWithLast(hook.Value))
 		}
 	}
 

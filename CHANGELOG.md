@@ -6,6 +6,44 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 ---
 
+## [0.4.0] — 2026-07-16
+
+### Added
+
+- **`before` / `after` hooks in request definitions** — Execute logic before sending request and after receiving response:
+  ```flow
+  request CreateOrder {
+    before {
+      set request_id = "{{$uuid}}"
+      log("Sending: {{request_id}}")
+    }
+
+    POST "{{base_url}}/orders"
+    body json { ref: "{{request_id}}" }
+
+    extract { order_id from json "$.id" }
+
+    after {
+      log("Created: id={{order_id}}, status={{last.status}}")
+    }
+  }
+  ```
+
+  Supported hook statements:
+  | Statement | When | What it does |
+  |-----------|------|--------------|
+  | `set key = "value"` | before | Set variable before request (available in headers/body) |
+  | `log("message")` | before/after | Print debug message with interpolation |
+  | `script "path.js"` | (planned) | Execute external script |
+
+  Execution order: `before` → send request → assertions → `extract` → `after`
+
+### Changed
+
+- Versi naik ke 0.4.0 (minor bump — new DSL construct)
+
+---
+
 ## [0.3.5] — 2026-07-16
 
 ### Fixed
