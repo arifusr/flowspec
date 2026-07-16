@@ -678,16 +678,35 @@ func (e *Engine) buildSchemaBody(body *ast.BodyDecl) []byte {
 		schemaPath = filepath.Join(e.BaseDir, schemaPath)
 	}
 
-	s, err := schema.LoadSchema(schemaPath)
+	rawData, err := os.ReadFile(schemaPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ⚠ Schema error: %s\n", err)
+		fmt.Fprintf(os.Stderr, "  ⚠ Schema/file error: cannot read %s: %s\n", schemaPath, err)
 		return nil
 	}
 
-	payload := schema.GeneratePayload(s)
+	// Determine if this is a JSON Schema or a raw JSON data template.
+	// JSON Schema has "type" + "properties" at top level.
+	// Raw JSON data template is any other valid JSON.
+	var payload interface{}
+
+	if isJSONSchema(rawData) {
+		// Parse as JSON Schema → generate payload from defaults/examples
+		s, err := schema.LoadSchema(schemaPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ⚠ Schema error: %s\n", err)
+			return nil
+		}
+		payload = schema.GeneratePayload(s)
+	} else {
+		// Treat as raw JSON data template — load as-is
+		if err := json.Unmarshal(rawData, &payload); err != nil {
+			fmt.Fprintf(os.Stderr, "  ⚠ JSON file error: %s is not valid JSON: %s\n", schemaPath, err)
+			return nil
+		}
+	}
 
 	// Apply set overrides with variable interpolation
-	if body.SetOverrides != nil {
+	if body.SetOverrides != nil && len(body.SetOverrides) > 0 {
 		resolvedOverrides := make(map[string]string)
 		for k, v := range body.SetOverrides {
 			resolvedOverrides[k] = e.Vars.Interpolate(v)
@@ -695,12 +714,48 @@ func (e *Engine) buildSchemaBody(body *ast.BodyDecl) []byte {
 		payload = schema.ApplyOverrides(payload, resolvedOverrides)
 	}
 
+	// Interpolate any {{variables}} in string values throughout the payload
+	payload = interpolatePayload(payload, e.Vars)
+
 	data, err := json.Marshal(payload)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ⚠ Schema marshal error: %s\n", err)
+		fmt.Fprintf(os.Stderr, "  ⚠ Marshal error: %s\n", err)
 		return nil
 	}
 	return data
+}
+
+// isJSONSchema checks if a JSON file is a JSON Schema (has "type" and "properties").
+func isJSONSchema(data []byte) bool {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return false
+	}
+	_, hasType := raw["type"]
+	_, hasProperties := raw["properties"]
+	return hasType && hasProperties
+}
+
+// interpolatePayload recursively interpolates {{var}} in string values of a payload.
+func interpolatePayload(data interface{}, vars *Variables) interface{} {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{})
+		for key, val := range v {
+			result[key] = interpolatePayload(val, vars)
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for i, val := range v {
+			result[i] = interpolatePayload(val, vars)
+		}
+		return result
+	case string:
+		return vars.Interpolate(v)
+	default:
+		return data
+	}
 }
 
 // resolveLetValue resolves a let value, handling special syntax:

@@ -413,12 +413,12 @@ func (p *Parser) parseBodyDecl() *ast.BodyDecl {
 	p.nextToken() // skip 'body'
 	body := &ast.BodyDecl{Position: pos}
 
-	// Check for `body from schema "path"` syntax
+	// Check for `body from schema "path"` or `body from file "path"` syntax
 	if p.curToken.Type == lexer.TOKEN_FROM {
 		p.nextToken() // skip 'from'
-		// Expect 'schema' keyword or ident
-		if p.curToken.Literal == "schema" {
-			p.nextToken() // skip 'schema'
+		// Accept 'schema', 'file', or just the path directly
+		if p.curToken.Literal == "schema" || p.curToken.Literal == "file" {
+			p.nextToken() // skip keyword
 		}
 		body.Type = "schema"
 		body.SchemaPath = p.curToken.Literal

@@ -6,6 +6,30 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 ---
 
+## [0.3.3] — 2026-07-16
+
+### Fixed
+
+- **`body from schema` fails with raw JSON data files** — Files containing `"items"` array (or any non-schema JSON) were incorrectly parsed as JSON Schema, causing unmarshal errors. Now `body from schema/file` auto-detects: if the file has `"type"` + `"properties"` → parse as JSON Schema; otherwise → load as raw JSON data template.
+
+### Added
+
+- **`body from file "path.json"`** — Explicit syntax to load raw JSON data as request body (alias for `body from schema` with auto-detection):
+  ```flow
+  body from file "data/payload.json" {
+    set formulation_id = "{{my_id}}"
+    set items[0].qty = "500"
+  }
+  ```
+
+- **Variable interpolation in data templates** — `{{variable}}` placeholders inside JSON data files are now resolved at runtime.
+
+### Changed
+
+- Versi naik ke 0.3.3
+
+---
+
 ## [0.3.2] — 2026-07-14
 
 ### Fixed
