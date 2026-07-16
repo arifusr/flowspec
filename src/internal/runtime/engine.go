@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -188,6 +189,10 @@ func (e *Engine) ExecuteRequest(req *ast.RequestDecl) StepResult {
 	// Store last response for last.json() / last.header()
 	e.LastResponse = resp
 
+	// Set last.* variables so they're accessible via {{last.status}}, {{last.body}}
+	e.Vars.Set("last.status", fmt.Sprintf("%d", resp.StatusCode))
+	e.Vars.Set("last.body", string(resp.Body))
+
 	// Run assertions
 	allPassed := true
 	for i := range req.Expects {
@@ -356,7 +361,7 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 
 		// Execute log statements
 		for _, msg := range step.Logs {
-			resolved := e.Vars.Interpolate(msg)
+			resolved := e.interpolateWithLast(msg)
 			fmt.Printf("  📋 log: %s\n", resolved)
 		}
 
@@ -373,7 +378,7 @@ func (e *Engine) executeStep(step *ast.StepDecl) []StepResult {
 			e.Vars.Set(l.Name, val)
 		}
 		for _, msg := range step.Logs {
-			resolved := e.Vars.Interpolate(msg)
+			resolved := e.interpolateWithLast(msg)
 			fmt.Printf("  📋 log: %s\n", resolved)
 		}
 		for _, w := range step.Writes {
@@ -583,7 +588,7 @@ func (e *Engine) executeStatementsOrdered(step *ast.StepDecl, results []StepResu
 			e.Vars.Set(stmt.Let.Name, val)
 
 		case "log":
-			resolved := e.Vars.Interpolate(stmt.Log)
+			resolved := e.interpolateWithLast(stmt.Log)
 			fmt.Printf("  📋 log: %s\n", resolved)
 
 		case "write":
@@ -798,6 +803,22 @@ func interpolatePayload(data interface{}, vars *Variables) interface{} {
 	default:
 		return data
 	}
+}
+
+// interpolateWithLast extends variable interpolation to support {{last.json("$.path")}}
+// and {{last.header("Name")}} inside strings (log messages, etc).
+func (e *Engine) interpolateWithLast(s string) string {
+	// First do standard interpolation (handles {{var}}, {{last.status}}, {{last.body}})
+	result := e.Vars.Interpolate(s)
+
+	// Then resolve any remaining {{last.json(...)}} or {{last.header(...)}} patterns
+	re := regexp.MustCompile(`\{\{(last\.(json|header)\([^}]+\))\}\}`)
+	result = re.ReplaceAllStringFunc(result, func(match string) string {
+		expr := strings.TrimSpace(match[2 : len(match)-2])
+		return e.resolveLetValue(expr)
+	})
+
+	return result
 }
 
 // resolveLetValue resolves a let value, handling special syntax:

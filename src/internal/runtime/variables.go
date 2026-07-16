@@ -78,6 +78,14 @@ func (v *Variables) Interpolate(s string) string {
 			return v.resolveDynamic(key)
 		}
 
+		// last.* accessors — check variable store first (set by engine after run)
+		if strings.HasPrefix(key, "last.") {
+			if val, ok := v.Get(key); ok {
+				return val
+			}
+			return match // leave unresolved if no last response
+		}
+
 		if val, ok := v.Get(key); ok {
 			return val
 		}

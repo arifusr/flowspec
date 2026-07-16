@@ -6,6 +6,26 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 ---
 
+## [0.3.5] — 2026-07-16
+
+### Fixed
+
+- **`{{last.status}}` and `{{last.body}}` now resolve inside `log()`** — Previously these rendered as literal strings. Now all `last.*` accessors work in string interpolation:
+  ```flow
+  step "Call API" {
+    run GetUsers
+    log("Status: {{last.status}}")                   // → "Status: 200"
+    log("Name: {{last.json(\"$[0].name\")}}")       // → "Name: Leanne Graham"
+  }
+  ```
+  No need for intermediate `let` variables anymore (though they still work).
+
+### Changed
+
+- Versi naik ke 0.3.5
+
+---
+
 ## [0.3.4] — 2026-07-16
 
 ### Fixed
