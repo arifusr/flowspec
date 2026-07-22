@@ -1,0 +1,59 @@
+{
+  "name": "flowspec-language",
+  "displayName": "FlowSpec — API Testing DSL",
+  "description": "Syntax highlighting, Go to Definition, and Hover for FlowSpec (.flow) files",
+  "version": "0.2.0",
+  "publisher": "arifusr",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arifusr/flowspec"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Testing"
+  ],
+  "keywords": [
+    "api",
+    "testing",
+    "flowspec",
+    "http",
+    "rest"
+  ],
+  "activationEvents": [
+    "onLanguage:flowspec",
+    "onLanguage:plaintext",
+    "workspaceContains:**/*.flow"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "flowspec",
+        "aliases": ["FlowSpec", "flowspec"],
+        "extensions": [".flow"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "flowspec",
+        "scopeName": "source.flowspec",
+        "path": "./syntaxes/flowspec.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.0.0"
+  }
+}

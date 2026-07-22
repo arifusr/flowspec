@@ -1,0 +1,90 @@
+{
+  "name": "FlowSpec",
+  "scopeName": "source.flowspec",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#annotations" },
+    { "include": "#keywords" },
+    { "include": "#http-methods" },
+    { "include": "#strings" },
+    { "include": "#variables" },
+    { "include": "#numbers" },
+    { "include": "#operators" },
+    { "include": "#types" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.flowspec", "match": "//.*$" },
+        { "name": "comment.block.flowspec", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "annotations": {
+      "patterns": [
+        { "name": "entity.name.tag.flowspec", "match": "@(tags|env|import)\\b" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.flowspec", "match": "\\b(flow|step|run|when|unless|retry|repeat|for|in|times|every|until|wait|teardown|include|parallel)\\b" },
+        { "name": "keyword.declaration.flowspec", "match": "\\b(request|auth|fragment|env|project)\\b" },
+        { "name": "keyword.other.flowspec", "match": "\\b(import|extends|use|from|body|header|query|extract|let|set|log|write|to|append|before|after|script)\\b" },
+        { "name": "keyword.assertion.flowspec", "match": "\\b(expect|status|json|time|size|contract|schema|soft)\\b" },
+        { "name": "keyword.operator.assertion.flowspec", "match": "\\b(is|not|exists|length|matches|contains|array|object|number|boolean|string)\\b" },
+        { "name": "keyword.other.config.flowspec", "match": "\\b(settings|version|default_env|timeout|fail_fast|redact|report_dir|description|ignore_fail)\\b" },
+        { "name": "constant.language.boolean.flowspec", "match": "\\b(true|false)\\b" }
+      ]
+    },
+    "http-methods": {
+      "patterns": [
+        { "name": "constant.language.http-method.flowspec", "match": "\\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\\b" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.flowspec",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "variable.other.interpolated.flowspec", "match": "\\{\\{[^}]+\\}\\}" },
+            { "name": "constant.character.escape.flowspec", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "string.quoted.single.flowspec",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "name": "variable.other.interpolated.flowspec", "match": "\\{\\{[^}]+\\}\\}" }
+          ]
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        { "name": "variable.language.builtin.flowspec", "match": "\\{\\{\\$[a-zA-Z_]+\\}\\}" },
+        { "name": "variable.other.interpolated.flowspec", "match": "\\{\\{[^}]+\\}\\}" }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.duration.flowspec", "match": "\\b\\d+(ms|s|m|h)\\b" },
+        { "name": "constant.numeric.size.flowspec", "match": "\\b\\d+(bytes|kb|mb|gb)\\b" },
+        { "name": "constant.numeric.status-range.flowspec", "match": "\\b[1-5]xx\\b" },
+        { "name": "constant.numeric.flowspec", "match": "\\b\\d+\\b" }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.comparison.flowspec", "match": "(==|!=|>=|<=|>|<)" },
+        { "name": "keyword.operator.assignment.flowspec", "match": "=" }
+      ]
+    },
+    "types": {
+      "patterns": [
+        { "name": "storage.type.flowspec", "match": "\\b(json|form|raw|multipart|csv|file)\\b" }
+      ]
+    }
+  }
+}
