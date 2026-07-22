@@ -110,6 +110,8 @@ const (
 	TOKEN_COOKIE
 	TOKEN_WRITE
 	TOKEN_TO
+	TOKEN_TRANSFORM
+	TOKEN_MAP
 
 	// HTTP methods
 	TOKEN_GET
@@ -194,6 +196,8 @@ var keywords = map[string]TokenType{
 	"cookie":      TOKEN_COOKIE,
 	"write":       TOKEN_WRITE,
 	"to":          TOKEN_TO,
+	"transform":   TOKEN_TRANSFORM,
+	"map":         TOKEN_MAP,
 	"GET":         TOKEN_GET,
 	"POST":        TOKEN_POST,
 	"PUT":         TOKEN_PUT,

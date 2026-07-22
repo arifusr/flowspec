@@ -1034,6 +1034,12 @@ func (p *Parser) parseStep() *ast.StepDecl {
 			w := p.parseWrite()
 			step.Writes = append(step.Writes, w)
 			step.Statements = append(step.Statements, ast.StepStatement{Type: "write", Write: &w})
+		case lexer.TOKEN_TRANSFORM:
+			t := p.parseTransform()
+			if t != nil {
+				step.Transforms = append(step.Transforms, *t)
+				step.Statements = append(step.Statements, ast.StepStatement{Type: "transform", Transform: t})
+			}
 		default:
 			p.nextToken()
 		}
@@ -1053,7 +1059,8 @@ func (p *Parser) parseConditionExpr() string {
 		p.curToken.Type != lexer.TOKEN_EXPECT &&
 		p.curToken.Type != lexer.TOKEN_LET &&
 		p.curToken.Type != lexer.TOKEN_WAIT &&
-		p.curToken.Type != lexer.TOKEN_RETRY {
+		p.curToken.Type != lexer.TOKEN_RETRY &&
+		p.curToken.Type != lexer.TOKEN_TRANSFORM {
 		if p.curToken.Literal == ";" {
 			p.nextToken()
 			break
@@ -1359,6 +1366,266 @@ func (p *Parser) parseForAsStep() *ast.StepDecl {
 	}
 
 	return step
+}
+
+// parseTransform parses `transform <name> from json "<jsonpath>" { map { ... } }`
+func (p *Parser) parseTransform() *ast.TransformDecl {
+	pos := p.curPos()
+	p.nextToken() // skip 'transform'
+
+	t := &ast.TransformDecl{Position: pos}
+
+	// Variable name
+	t.Variable = p.curToken.Literal
+	p.nextToken() // skip variable name
+
+	// Expect 'from'
+	if p.curToken.Type == lexer.TOKEN_FROM {
+		p.nextToken() // skip 'from'
+	} else {
+		p.addError("expected 'from' after transform variable name")
+		return nil
+	}
+
+	// Expect 'json' (only supported format)
+	if p.curToken.Type == lexer.TOKEN_JSON {
+		t.SourceFormat = "json"
+		p.nextToken() // skip 'json'
+	} else {
+		p.addError(fmt.Sprintf("unsupported transform source format '%s', supported: json", p.curToken.Literal))
+		return nil
+	}
+
+	// JSONPath expression (string)
+	if p.curToken.Type == lexer.TOKEN_STRING {
+		t.JSONPath = p.curToken.Literal
+		p.nextToken() // skip jsonpath string
+	} else {
+		p.addError("expected JSONPath string after 'json'")
+		return nil
+	}
+
+	// Expect '{' for transform block
+	if p.curToken.Type != lexer.TOKEN_LBRACE {
+		p.addError("expected '{' to open transform block")
+		return nil
+	}
+	p.nextToken() // skip {
+
+	// Parse inner block: expect 'map { ... }'
+	foundMap := false
+	for p.curToken.Type != lexer.TOKEN_RBRACE && p.curToken.Type != lexer.TOKEN_EOF {
+		if p.curToken.Type == lexer.TOKEN_MAP {
+			foundMap = true
+			p.nextToken() // skip 'map'
+
+			if p.curToken.Type != lexer.TOKEN_LBRACE {
+				p.addError("expected '{' after 'map'")
+				return nil
+			}
+			p.nextToken() // skip {
+
+			// Parse field mappings
+			for p.curToken.Type != lexer.TOKEN_RBRACE && p.curToken.Type != lexer.TOKEN_EOF {
+				mapping := p.parseFieldMapping()
+				if mapping != nil {
+					t.Mappings = append(t.Mappings, *mapping)
+				}
+			}
+			if p.curToken.Type == lexer.TOKEN_RBRACE {
+				p.nextToken() // skip } of map
+			}
+		} else {
+			p.nextToken()
+		}
+	}
+
+	if !foundMap {
+		p.addError(fmt.Sprintf("[%s:%d:%d] transform block is missing required 'map' block", p.filename, pos.Line, pos.Column))
+	}
+
+	if p.curToken.Type == lexer.TOKEN_RBRACE {
+		p.nextToken() // skip } of transform
+	}
+
+	return t
+}
+
+// parseFieldMapping parses a single field mapping like:
+// target_field = item.source_field
+// target_field = number(item.source_field)
+// target_field = 25000
+// target_field = "static string"
+// target_field = true
+// target_field = "{{variable}}"
+func (p *Parser) parseFieldMapping() *ast.FieldMapping {
+	pos := p.curPos()
+	m := &ast.FieldMapping{Position: pos}
+
+	// Target field name
+	m.TargetName = p.curToken.Literal
+	p.nextToken() // skip target name
+
+	// Expect '='
+	if p.curToken.Type == lexer.TOKEN_ASSIGN {
+		p.nextToken() // skip =
+	} else {
+		p.addError("expected '=' in field mapping")
+		return nil
+	}
+
+	// Determine value type
+	switch {
+	case p.curToken.Type == lexer.TOKEN_NUMBER || p.curToken.Type == lexer.TOKEN_INT:
+		// number(...) coercion function or a number keyword used differently
+		// Check if this is the 'number' keyword followed by '(' — that's a coercion
+		if p.curToken.Type == lexer.TOKEN_NUMBER && p.peekToken.Type == lexer.TOKEN_LPAREN {
+			m.ValueType = "coercion"
+			m.Coercion = "number"
+			p.nextToken() // skip 'number'
+			p.nextToken() // skip '('
+			// Read item.field expression
+			m.SourcePath = p.parseItemExpression()
+			if p.curToken.Type == lexer.TOKEN_RPAREN {
+				p.nextToken() // skip ')'
+			}
+		} else if p.curToken.Type == lexer.TOKEN_INT {
+			// Static number literal
+			m.ValueType = "static_number"
+			m.StaticVal = p.curToken.Literal
+			p.nextToken()
+		} else {
+			// 'number' keyword not followed by ( — treat as item field reference?
+			// This shouldn't normally happen, but handle gracefully
+			m.ValueType = "item_field"
+			m.SourcePath = p.curToken.Literal
+			p.nextToken()
+		}
+
+	case p.curToken.Type == lexer.TOKEN_STRING_KW && p.peekToken.Type == lexer.TOKEN_LPAREN:
+		// string() coercion
+		m.ValueType = "coercion"
+		m.Coercion = "string"
+		p.nextToken() // skip 'string'
+		p.nextToken() // skip '('
+		m.SourcePath = p.parseItemExpression()
+		if p.curToken.Type == lexer.TOKEN_RPAREN {
+			p.nextToken() // skip ')'
+		}
+
+	case p.curToken.Type == lexer.TOKEN_BOOLEAN && p.peekToken.Type == lexer.TOKEN_LPAREN:
+		// bool() coercion — TOKEN_BOOLEAN is the keyword "boolean", but we also accept "bool"
+		m.ValueType = "coercion"
+		m.Coercion = "bool"
+		p.nextToken() // skip 'bool'/'boolean'
+		p.nextToken() // skip '('
+		m.SourcePath = p.parseItemExpression()
+		if p.curToken.Type == lexer.TOKEN_RPAREN {
+			p.nextToken() // skip ')'
+		}
+
+	case p.curToken.Literal == "bool" && p.peekToken.Type == lexer.TOKEN_LPAREN:
+		// bool() coercion (literal "bool" not recognized as keyword, might be ident)
+		m.ValueType = "coercion"
+		m.Coercion = "bool"
+		p.nextToken() // skip 'bool'
+		p.nextToken() // skip '('
+		m.SourcePath = p.parseItemExpression()
+		if p.curToken.Type == lexer.TOKEN_RPAREN {
+			p.nextToken() // skip ')'
+		}
+
+	case p.curToken.Type == lexer.TOKEN_STRING:
+		// String literal or variable reference "{{var}}"
+		val := p.curToken.Literal
+		if strings.HasPrefix(val, "{{") && strings.HasSuffix(val, "}}") {
+			m.ValueType = "variable"
+			m.StaticVal = val
+		} else {
+			m.ValueType = "static_string"
+			m.StaticVal = val
+		}
+		p.nextToken()
+
+	case p.curToken.Type == lexer.TOKEN_TRUE:
+		m.ValueType = "static_bool"
+		m.StaticVal = "true"
+		p.nextToken()
+
+	case p.curToken.Type == lexer.TOKEN_FALSE:
+		m.ValueType = "static_bool"
+		m.StaticVal = "false"
+		p.nextToken()
+
+	case p.curToken.Literal == "item" || strings.HasPrefix(p.curToken.Literal, "item."):
+		// item.field_name reference
+		m.ValueType = "item_field"
+		m.SourcePath = p.parseItemExpression()
+
+	default:
+		// Could be an identifier that starts with "item" read as separate tokens,
+		// or a negative number
+		if p.curToken.Literal == "-" {
+			p.nextToken() // skip '-'
+			if p.curToken.Type == lexer.TOKEN_INT {
+				m.ValueType = "static_number"
+				m.StaticVal = "-" + p.curToken.Literal
+				p.nextToken()
+			} else {
+				p.addError("expected number after '-'")
+				return nil
+			}
+		} else {
+			// Treat as item field reference
+			m.ValueType = "item_field"
+			m.SourcePath = p.parseItemExpression()
+		}
+	}
+
+	return m
+}
+
+// parseItemExpression parses an item.field.nested expression and returns the field path
+// (stripping the "item." prefix)
+func (p *Parser) parseItemExpression() string {
+	var parts []string
+	literal := p.curToken.Literal
+
+	// Handle "item.field" as a single token (lexer reads dots as part of identifier)
+	if strings.HasPrefix(literal, "item.") {
+		path := strings.TrimPrefix(literal, "item.")
+		p.nextToken()
+		return path
+	}
+
+	// Handle "item" followed by dot-separated tokens
+	if literal == "item" {
+		p.nextToken() // skip 'item'
+		if p.curToken.Type == lexer.TOKEN_DOT {
+			p.nextToken() // skip '.'
+		}
+	}
+
+	// Collect field path parts
+	for p.curToken.Type != lexer.TOKEN_RPAREN &&
+		p.curToken.Type != lexer.TOKEN_RBRACE &&
+		p.curToken.Type != lexer.TOKEN_EOF &&
+		p.curToken.Type != lexer.TOKEN_ASSIGN {
+		if p.curToken.Type == lexer.TOKEN_DOT {
+			p.nextToken()
+			continue
+		}
+		parts = append(parts, p.curToken.Literal)
+		p.nextToken()
+		// If next is a dot, continue
+		if p.curToken.Type == lexer.TOKEN_DOT {
+			p.nextToken()
+			continue
+		}
+		break
+	}
+
+	return strings.Join(parts, ".")
 }
 
 // Utility to check if a string is likely an identifier used as ident

@@ -183,6 +183,7 @@ type StepDecl struct {
 	Lets       []LetDecl
 	Logs       []string        // log("message") statements
 	Writes     []WriteDecl     // write ... to "path" statements
+	Transforms []TransformDecl // transform blocks
 	Statements []StepStatement // ordered statements for multi-run steps
 	Wait       string          // e.g. "3s"
 	Retry      *RetryDecl
@@ -194,12 +195,13 @@ func (s *StepDecl) Pos() Position { return s.Position }
 
 // StepStatement represents a single ordered statement within a step.
 type StepStatement struct {
-	Type   string // "run", "let", "log", "write", "expect"
-	Run    *RunDecl
-	Let    *LetDecl
-	Log    string
-	Write  *WriteDecl
-	Expect *ExpectDecl
+	Type      string // "run", "let", "log", "write", "expect", "transform"
+	Run       *RunDecl
+	Let       *LetDecl
+	Log       string
+	Write     *WriteDecl
+	Expect    *ExpectDecl
+	Transform *TransformDecl
 }
 
 // WriteDecl represents `write <source> to "path"` statement.
@@ -277,4 +279,26 @@ type HookStatement struct {
 	Type     string // set, log, script
 	Key      string
 	Value    string
+}
+
+// TransformDecl represents a `transform <name> from json "<jsonpath>" { map { ... } }` block.
+type TransformDecl struct {
+	Position     Position
+	Variable     string         // the variable name to store result
+	SourceFormat string         // "json" (only supported format for now)
+	JSONPath     string         // the JSONPath expression to extract source array
+	Mappings     []FieldMapping // field mappings inside map { ... }
+}
+
+func (t *TransformDecl) Pos() Position { return t.Position }
+
+// FieldMapping represents a single field mapping inside a transform's map block.
+// e.g. `material_id = item.material_number` or `base_qty = number(item.amount)` or `packaging_size = 25000`
+type FieldMapping struct {
+	Position   Position
+	TargetName string // the target field name
+	ValueType  string // "item_field", "coercion", "static_number", "static_string", "static_bool", "variable"
+	SourcePath string // source field path (for item_field and coercion types, e.g. "material_number")
+	Coercion   string // coercion function name: "number", "string", "bool"
+	StaticVal  string // static literal value as string
 }

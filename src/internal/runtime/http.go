@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -144,6 +145,15 @@ func tryParseValue(s string) interface{} {
 	}
 	if s == "false" {
 		return false
+	}
+	// Check if value is a JSON array or object (from transform variables)
+	trimmed := strings.TrimSpace(s)
+	if (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) ||
+		(strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) {
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+			return parsed
+		}
 	}
 	// Everything else stays as string — no implicit numeric coercion.
 	// If a value looks like a number but was written in quotes ("320301"),

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -614,6 +615,9 @@ func (e *Engine) executeStatementsOrdered(step *ast.StepDecl, results []StepResu
 		case "write":
 			e.executeWrite(*stmt.Write)
 
+		case "transform":
+			e.executeTransform(stmt.Transform)
+
 		case "expect":
 			// Step-level expect evaluated against last response
 			if e.LastResponse != nil && stmt.Expect != nil {
@@ -725,6 +729,170 @@ func (e *Engine) executeWrite(w ast.WriteDecl) {
 	}
 }
 
+// executeTransform executes a transform block: extracts array via JSONPath,
+// maps each element to a new object using field mappings, and stores the result as a JSON string variable.
+func (e *Engine) executeTransform(t *ast.TransformDecl) {
+	if e.LastResponse == nil {
+		fmt.Printf("  ⚠ transform %s: no response available (transform requires a preceding request)\n", t.Variable)
+		return
+	}
+
+	// Parse response body
+	var body interface{}
+	if err := json.Unmarshal(e.LastResponse.Body, &body); err != nil {
+		fmt.Printf("  ⚠ transform %s: response is not valid JSON: %s\n", t.Variable, err)
+		return
+	}
+
+	// Evaluate JSONPath to extract source array
+	result, found := evalJSONPath(body, t.JSONPath)
+	if !found {
+		fmt.Printf("  ⚠ transform %s: JSONPath '%s' not found in response body\n", t.Variable, t.JSONPath)
+		return
+	}
+
+	// Verify result is an array
+	sourceArray, ok := result.([]interface{})
+	if !ok {
+		fmt.Printf("  ⚠ transform %s: JSONPath '%s' resolved to %s, expected array\n", t.Variable, t.JSONPath, getJSONType(result))
+		return
+	}
+
+	// Apply field mappings to each element
+	var transformed []interface{}
+	for _, elem := range sourceArray {
+		elemMap, ok := elem.(map[string]interface{})
+		if !ok {
+			// If element is not an object, skip it
+			continue
+		}
+
+		newObj := make(map[string]interface{})
+		for _, mapping := range t.Mappings {
+			val := e.resolveFieldMappingValue(mapping, elemMap)
+			newObj[mapping.TargetName] = val
+		}
+		transformed = append(transformed, newObj)
+	}
+
+	// Serialize to JSON and store as variable
+	data, err := json.Marshal(transformed)
+	if err != nil {
+		fmt.Printf("  ⚠ transform %s: failed to serialize result: %s\n", t.Variable, err)
+		return
+	}
+
+	e.Vars.Set(t.Variable, string(data))
+	if e.Verbose >= 1 {
+		fmt.Printf("  🔄 transform %s: %d items mapped\n", t.Variable, len(transformed))
+	}
+}
+
+// resolveFieldMappingValue resolves a single field mapping value for a given source element.
+func (e *Engine) resolveFieldMappingValue(mapping ast.FieldMapping, elem map[string]interface{}) interface{} {
+	switch mapping.ValueType {
+	case "item_field":
+		return resolveNestedField(elem, mapping.SourcePath)
+
+	case "coercion":
+		rawVal := resolveNestedField(elem, mapping.SourcePath)
+		return applyCoercion(mapping.Coercion, rawVal, mapping.TargetName)
+
+	case "static_number":
+		// Try integer first, then float
+		if n, err := strconv.ParseInt(mapping.StaticVal, 10, 64); err == nil {
+			return n
+		}
+		if f, err := strconv.ParseFloat(mapping.StaticVal, 64); err == nil {
+			return f
+		}
+		return 0
+
+	case "static_string":
+		return mapping.StaticVal
+
+	case "static_bool":
+		return mapping.StaticVal == "true"
+
+	case "variable":
+		// Interpolate {{variable}} references
+		return e.Vars.Interpolate(mapping.StaticVal)
+
+	default:
+		return nil
+	}
+}
+
+// resolveNestedField resolves a dot-separated path against a map.
+// e.g. "address.city" resolves map["address"].(map)["city"]
+func resolveNestedField(obj map[string]interface{}, path string) interface{} {
+	parts := strings.Split(path, ".")
+	var current interface{} = obj
+
+	for _, part := range parts {
+		m, ok := current.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		val, exists := m[part]
+		if !exists {
+			return nil
+		}
+		current = val
+	}
+	return current
+}
+
+// applyCoercion applies a type coercion function to a value.
+func applyCoercion(fn string, val interface{}, fieldName string) interface{} {
+	switch fn {
+	case "number":
+		switch v := val.(type) {
+		case float64:
+			return v
+		case int64:
+			return v
+		case string:
+			// Try integer first
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				return n
+			}
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				return f
+			}
+			fmt.Printf("  ⚠ transform: number() failed for field '%s': cannot parse '%s' as number\n", fieldName, v)
+			return 0
+		default:
+			return 0
+		}
+
+	case "string":
+		if val == nil {
+			return ""
+		}
+		return fmt.Sprintf("%v", val)
+
+	case "bool":
+		switch v := val.(type) {
+		case bool:
+			return v
+		case float64:
+			return v != 0
+		case int64:
+			return v != 0
+		case string:
+			return v != ""
+		case nil:
+			return false
+		default:
+			return false
+		}
+
+	default:
+		return val
+	}
+}
+
 // prettyJSON attempts to pretty-print JSON, returns as-is if not valid JSON.
 func prettyJSON(data []byte) []byte {
 	var obj interface{}
@@ -819,7 +987,17 @@ func interpolatePayload(data interface{}, vars *Variables) interface{} {
 		}
 		return result
 	case string:
-		return vars.Interpolate(v)
+		interpolated := vars.Interpolate(v)
+		// If the interpolated result is a JSON array/object, parse and inject it
+		trimmed := strings.TrimSpace(interpolated)
+		if (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) ||
+			(strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) {
+			var parsed interface{}
+			if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+				return parsed
+			}
+		}
+		return interpolated
 	default:
 		return data
 	}

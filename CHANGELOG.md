@@ -6,6 +6,66 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 ---
 
+## [0.5.0] — 2026-07-22
+
+### Added
+
+- **`transform` block — Transform data antar step** — Extract array dari response, rename fields, coerce types, inject static values, dan gunakan hasilnya sebagai body request berikutnya. Memungkinkan integration testing di mana output API A menjadi input API B dengan format berbeda.
+  ```flow
+  step "Get Materials" {
+    run GetComponentCostRM("FM-000259", "019efcc8-...")
+
+    transform items from json "$.data.material" {
+      map {
+        material_id    = item.material_number
+        material_code  = item.material_number
+        material_name  = item.name
+        base_qty       = number(item.amount)
+        packaging_size = 25000
+      }
+    }
+  }
+
+  step "Create BOM" {
+    run BomCalcStore("FM-000259", "019efcc8-...") {
+      body json {
+        unit: "g"
+        items: "{{items}}"
+      }
+    }
+  }
+  ```
+
+  Fitur yang didukung:
+  | Fitur | Contoh |
+  |-------|--------|
+  | Array extraction via JSONPath | `transform x from json "$.data.material"` |
+  | Field mapping & rename | `material_id = item.material_number` |
+  | Nested field access | `city = item.address.city` |
+  | Type coercion | `base_qty = number(item.amount)` |
+  | Static value injection | `packaging_size = 25000` |
+  | String literal | `status = "active"` |
+  | Boolean literal | `verified = true` |
+  | Variable reference | `env_name = "{{current_env}}"` |
+  | Multiple transforms per step | Dua atau lebih `transform` block dalam satu step |
+  | JSON array injection in body | `{{items}}` di-inject sebagai JSON array, bukan string |
+
+- **Coercion functions** — `number()`, `string()`, `bool()` untuk konversi tipe saat transform:
+  ```flow
+  base_qty = number(item.amount)     // "250000" → 250000
+  label = string(item.id)            // 123 → "123"
+  active = bool(item.status)         // non-empty → true
+  ```
+
+- **JSON array variable interpolation** — Variable yang berisi JSON array (`[{...}, {...}]`) otomatis di-parse dan di-inject sebagai JSON structure (bukan double-encoded string) saat digunakan di `body json {}` atau `body from file`.
+
+### Changed
+
+- Versi naik ke 0.5.0 (minor bump — new DSL construct)
+- `transform` dan `map` ditambahkan sebagai reserved keywords di lexer
+
+---
+
 ## [0.4.0] — 2026-07-16
 
 ### Added
