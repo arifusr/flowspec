@@ -9,7 +9,7 @@ import (
 	"github.com/testing-cli/apitest/internal/cli"
 )
 
-const version = "0.5.0"
+const version = "0.6.2"
 
 func main() {
 	if len(os.Args) < 2 {

@@ -36,6 +36,13 @@ const (
 	TOKEN_GT     // >
 	TOKEN_LTE    // <=
 	TOKEN_GTE    // >=
+	TOKEN_PLUS   // +
+	TOKEN_MINUS  // -
+	TOKEN_STAR   // *
+	TOKEN_SLASH  // /
+
+	// Variable reference
+	TOKEN_VARREF // {{variable_name}}
 
 	// Keywords
 	TOKEN_PROJECT

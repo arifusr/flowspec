@@ -309,6 +309,128 @@ Atau gunakan `auth` block (Bab 9).
 
 ---
 
+## 6.9 Transform — Reshape Array Data
+
+Sering kali kamu perlu **mengambil array dari response**, mengubah format field-nya, dan menggunakannya sebagai body request berikutnya. Itulah fungsi `transform`.
+
+### Basic Transform
+
+```flow
+step "Get materials" {
+  run GetMaterials
+  // Response: { "data": { "material": [{"name": "X", "material_number": "123", "amount": "50000"}] } }
+
+  transform items from json "$.data.material" {
+    map {
+      material_id   = item.material_number    // rename field
+      material_name = item.name               // rename field
+      base_qty      = number(item.amount)     // string → number
+      packaging     = 25000                   // static value
+    }
+  }
+  // items = [{"material_id":"123","material_name":"X","base_qty":50000,"packaging":25000}]
+}
+```
+
+### Arithmetic Expressions
+
+Transform mendukung **kalkulasi matematis** langsung di field mapping:
+
+```flow
+transform items from json "$.data.material" {
+  map {
+    base_qty     = number(item.amount)
+    required     = number(item.amount) * 2          // perkalian
+    half         = number(item.amount) / 2          // pembagian
+    added        = number(item.amount) + 1000       // penjumlahan
+    subtracted   = number(item.amount) - 500        // pengurangan
+  }
+}
+```
+
+**Operator precedence:** `*` dan `/` dievaluasi sebelum `+` dan `-`. Gunakan `()` untuk override:
+
+```flow
+    result = number(item.amount) + 10 * 2       // = amount + 20
+    result = (number(item.amount) + 10) * 2     // = (amount + 10) * 2
+```
+
+### Math Functions
+
+| Function | Arti | Contoh |
+|----------|------|--------|
+| `floor(x)` | Bulatkan ke bawah | `floor(7.8)` → 7 |
+| `round(x)` | Bulatkan ke terdekat | `round(2.5)` → 3 |
+| `ceil(x)` | Bulatkan ke atas | `ceil(7.2)` → 8 |
+| `abs(x)` | Nilai absolut | `abs(-5)` → 5 |
+
+```flow
+transform items from json "$.data.material" {
+  map {
+    packs = floor(number(item.amount) / 25000)
+  }
+}
+```
+
+### Intra-Map Field Reference
+
+Field yang sudah dideklarasikan di atas bisa direferensi oleh field di bawahnya:
+
+```flow
+transform items from json "$.data.material" {
+  map {
+    required    = number(item.amount) * 2
+    full_packs  = floor(required / 25000)       // pakai 'required' dari atas
+    bom_b       = full_packs * 25000            // pakai 'full_packs'
+    bom_c       = required - bom_b              // pakai keduanya
+  }
+}
+```
+
+💡 **Tip:** Ini membuat kalkulasi bertahap jadi sangat mudah dibaca — seperti rumus Excel.
+
+### Variable dalam Expressions
+
+Gunakan `{{variable}}` langsung di ekspresi aritmatika:
+
+```flow
+let scale_factor = "2"
+let pkg_size = "25000"
+
+transform items from json "$.data.material" {
+  map {
+    required   = number(item.amount) * {{scale_factor}}
+    full_packs = floor(required / {{pkg_size}})
+    bom_b      = full_packs * {{pkg_size}}
+    bom_c      = required - bom_b
+  }
+}
+```
+
+### Gunakan Hasil Transform
+
+Hasil transform tersimpan sebagai JSON array di variable. Gunakan di request berikutnya:
+
+```flow
+step "Submit BOM" {
+  run GetMaterials
+  transform items from json "$.data.material" {
+    map { ... }
+  }
+
+  run SubmitBOM {
+    body json {
+      unit: "g"
+      items: "{{items}}"
+    }
+  }
+}
+```
+
+⚠️ **Perhatian:** `{{items}}` di dalam `body json {}` otomatis di-inject sebagai JSON array (bukan string).
+
+---
+
 ## Ringkasan Bab 6
 
 | Syntax | Fungsi |
@@ -320,6 +442,10 @@ Atau gunakan `auth` block (Bab 9).
 | `let x = last.header("Name")` | Extract header inline |
 | `log("message {{var}}")` | Debug print ke console |
 | `run GetUser(user_id)` | Pakai variable sebagai parameter |
+| `transform x from json "$.path" { map { ... } }` | Extract & reshape array |
+| `number(item.field) * 2` | Arithmetic dalam transform |
+| `floor()`, `round()`, `ceil()`, `abs()` | Math functions |
+| Intra-map reference | `bom_c = required - bom_b` |
 
 ---
 

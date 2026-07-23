@@ -139,6 +139,7 @@ apitest dsl show flows/user-crud.flow --env dev   # preview resolved
 - **`last.json("$[?(@.field=='value')]")`** — search/filter di array JSON response
 - **`body from schema "path.json"`** — generate body dari JSON Schema + deep override via `set`
 - **`expect schema "path.json"`** — validate response terhadap JSON Schema
+- **`transform` + arithmetic** — extract array, reshape data, hitung dengan `*`, `/`, `+`, `-`, `floor()`, `round()`, `ceil()`, `abs()`, dan referensi antar field
 - **Auto-discovery** — flow resolve request by name tanpa `import`
 
 Spesifikasi lengkap: [`docs/flowspec-dsl.md`](docs/flowspec-dsl.md) · Contoh: [`examples/`](examples/)

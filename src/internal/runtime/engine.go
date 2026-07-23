@@ -3,6 +3,7 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -768,9 +769,12 @@ func (e *Engine) executeTransform(t *ast.TransformDecl) {
 		}
 
 		newObj := make(map[string]interface{})
+		computedFields := make(map[string]interface{})
+
 		for _, mapping := range t.Mappings {
-			val := e.resolveFieldMappingValue(mapping, elemMap)
+			val := e.resolveFieldMappingValue(mapping, elemMap, computedFields)
 			newObj[mapping.TargetName] = val
+			computedFields[mapping.TargetName] = val
 		}
 		transformed = append(transformed, newObj)
 	}
@@ -789,8 +793,32 @@ func (e *Engine) executeTransform(t *ast.TransformDecl) {
 }
 
 // resolveFieldMappingValue resolves a single field mapping value for a given source element.
-func (e *Engine) resolveFieldMappingValue(mapping ast.FieldMapping, elem map[string]interface{}) interface{} {
+func (e *Engine) resolveFieldMappingValue(mapping ast.FieldMapping, elem map[string]interface{}, computedFields map[string]interface{}) interface{} {
 	switch mapping.ValueType {
+	case "expression":
+		ctx := &ExprContext{
+			Element:        elem,
+			ComputedFields: computedFields,
+			Vars:           e.Vars,
+			FieldName:      mapping.TargetName,
+		}
+		result, err := EvalExpr(mapping.Expression, ctx)
+		if err != nil {
+			fmt.Printf("  ⚠ transform: expression error for field '%s': %s\n", mapping.TargetName, err)
+			return 0
+		}
+		// Print warnings
+		for _, w := range ctx.Warnings {
+			if e.Verbose >= 1 {
+				fmt.Printf("  ⚠ transform: %s\n", w)
+			}
+		}
+		// Return as int64 if whole number for clean JSON serialization
+		if result == math.Trunc(result) && !math.IsInf(result, 0) {
+			return int64(result)
+		}
+		return result
+
 	case "item_field":
 		return resolveNestedField(elem, mapping.SourcePath)
 
@@ -815,7 +843,8 @@ func (e *Engine) resolveFieldMappingValue(mapping ast.FieldMapping, elem map[str
 		return mapping.StaticVal == "true"
 
 	case "variable":
-		// Interpolate {{variable}} references
+		// Interpolate {{variable}} references — always returns string as-is.
+		// User must use number({{var}}) for explicit numeric coercion.
 		return e.Vars.Interpolate(mapping.StaticVal)
 
 	default:

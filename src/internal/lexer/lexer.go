@@ -55,6 +55,12 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = TOKEN_EOF
 		tok.Literal = ""
 	case '{':
+		if l.peekChar() == '{' {
+			// {{variable_name}} reference
+			tok.Type = TOKEN_VARREF
+			tok.Literal = l.readVarRef()
+			return tok
+		}
 		tok.Type = TOKEN_LBRACE
 		tok.Literal = "{"
 	case '}':
@@ -132,9 +138,18 @@ func (l *Lexer) NextToken() Token {
 			tok.Literal = l.readBlockComment()
 			return tok
 		} else {
-			tok.Type = TOKEN_IDENT
+			tok.Type = TOKEN_SLASH
 			tok.Literal = "/"
 		}
+	case '+':
+		tok.Type = TOKEN_PLUS
+		tok.Literal = "+"
+	case '-':
+		tok.Type = TOKEN_MINUS
+		tok.Literal = "-"
+	case '*':
+		tok.Type = TOKEN_STAR
+		tok.Literal = "*"
 	case '"':
 		tok.Type = TOKEN_STRING
 		tok.Literal = l.readString('"')
@@ -200,6 +215,17 @@ func (l *Lexer) readNumber() Token {
 	start := l.pos
 	for isDigit(l.ch) {
 		l.readChar()
+	}
+	// Check for decimal point (float literal)
+	if l.ch == '.' && isDigit(l.peekChar()) {
+		l.readChar() // skip '.'
+		for isDigit(l.ch) {
+			l.readChar()
+		}
+		// Float literals don't have duration/size suffixes
+		tok.Type = TOKEN_INT // reuse TOKEN_INT for both int and float literals
+		tok.Literal = l.input[start:l.pos]
+		return tok
 	}
 	// Check for duration/size suffix
 	if isLetter(l.ch) {
@@ -294,4 +320,25 @@ func isLetter(ch byte) bool {
 
 func isDigit(ch byte) bool {
 	return ch >= '0' && ch <= '9'
+}
+
+// readVarRef reads a {{variable_name}} reference and returns just the variable name.
+func (l *Lexer) readVarRef() string {
+	// Skip the opening {{
+	l.readChar() // skip first {
+	l.readChar() // skip second {
+
+	start := l.pos
+	for l.ch != 0 && !(l.ch == '}' && l.peekChar() == '}') {
+		l.readChar()
+	}
+	name := l.input[start:l.pos]
+
+	// Skip the closing }}
+	if l.ch == '}' {
+		l.readChar() // skip first }
+		l.readChar() // skip second }
+	}
+
+	return strings.TrimSpace(name)
 }

@@ -27,7 +27,7 @@ Setiap bab berakhir dengan **Ringkasan** dan **Latihan**. Jawaban latihan ada di
 | [3](03-request-pertama.md) | Request Pertama | Tulis & jalankan HTTP GET/POST pertama |
 | [4](04-environment-variabel.md) | Environment & Variabel | Kelola dev/staging/prod, secret, dynamic vars |
 | [5](05-assertion-expect.md) | Assertion dengan `expect` | Validasi status, body, header, response time |
-| [6](06-extract-data-flow.md) | Extract & Data Flow | Kirim data antar step (user_id, token, dll.) |
+| [6](06-extract-data-flow.md) | Extract & Data Flow | Kirim data antar step, transform & arithmetic |
 | [7](07-flow-skenario.md) | Flow & Skenario | Gabungkan request jadi alur bisnis |
 | [8](08-control-flow.md) | Control Flow | Kondisi, loop, retry, wait |
 | [9](09-reuse-composition.md) | Reuse & Composition | Import, extends, fragment, override |

@@ -1454,6 +1454,8 @@ func (p *Parser) parseTransform() *ast.TransformDecl {
 // parseFieldMapping parses a single field mapping like:
 // target_field = item.source_field
 // target_field = number(item.source_field)
+// target_field = number(item.amount) * 2
+// target_field = floor(number(item.amount) * 2 / 25000)
 // target_field = 25000
 // target_field = "static string"
 // target_field = true
@@ -1474,69 +1476,8 @@ func (p *Parser) parseFieldMapping() *ast.FieldMapping {
 		return nil
 	}
 
-	// Determine value type
-	switch {
-	case p.curToken.Type == lexer.TOKEN_NUMBER || p.curToken.Type == lexer.TOKEN_INT:
-		// number(...) coercion function or a number keyword used differently
-		// Check if this is the 'number' keyword followed by '(' — that's a coercion
-		if p.curToken.Type == lexer.TOKEN_NUMBER && p.peekToken.Type == lexer.TOKEN_LPAREN {
-			m.ValueType = "coercion"
-			m.Coercion = "number"
-			p.nextToken() // skip 'number'
-			p.nextToken() // skip '('
-			// Read item.field expression
-			m.SourcePath = p.parseItemExpression()
-			if p.curToken.Type == lexer.TOKEN_RPAREN {
-				p.nextToken() // skip ')'
-			}
-		} else if p.curToken.Type == lexer.TOKEN_INT {
-			// Static number literal
-			m.ValueType = "static_number"
-			m.StaticVal = p.curToken.Literal
-			p.nextToken()
-		} else {
-			// 'number' keyword not followed by ( — treat as item field reference?
-			// This shouldn't normally happen, but handle gracefully
-			m.ValueType = "item_field"
-			m.SourcePath = p.curToken.Literal
-			p.nextToken()
-		}
-
-	case p.curToken.Type == lexer.TOKEN_STRING_KW && p.peekToken.Type == lexer.TOKEN_LPAREN:
-		// string() coercion
-		m.ValueType = "coercion"
-		m.Coercion = "string"
-		p.nextToken() // skip 'string'
-		p.nextToken() // skip '('
-		m.SourcePath = p.parseItemExpression()
-		if p.curToken.Type == lexer.TOKEN_RPAREN {
-			p.nextToken() // skip ')'
-		}
-
-	case p.curToken.Type == lexer.TOKEN_BOOLEAN && p.peekToken.Type == lexer.TOKEN_LPAREN:
-		// bool() coercion — TOKEN_BOOLEAN is the keyword "boolean", but we also accept "bool"
-		m.ValueType = "coercion"
-		m.Coercion = "bool"
-		p.nextToken() // skip 'bool'/'boolean'
-		p.nextToken() // skip '('
-		m.SourcePath = p.parseItemExpression()
-		if p.curToken.Type == lexer.TOKEN_RPAREN {
-			p.nextToken() // skip ')'
-		}
-
-	case p.curToken.Literal == "bool" && p.peekToken.Type == lexer.TOKEN_LPAREN:
-		// bool() coercion (literal "bool" not recognized as keyword, might be ident)
-		m.ValueType = "coercion"
-		m.Coercion = "bool"
-		p.nextToken() // skip 'bool'
-		p.nextToken() // skip '('
-		m.SourcePath = p.parseItemExpression()
-		if p.curToken.Type == lexer.TOKEN_RPAREN {
-			p.nextToken() // skip ')'
-		}
-
-	case p.curToken.Type == lexer.TOKEN_STRING:
-		// String literal or variable reference "{{var}}"
+	// Handle string literals directly (they can't be part of arithmetic)
+	if p.curToken.Type == lexer.TOKEN_STRING {
 		val := p.curToken.Literal
 		if strings.HasPrefix(val, "{{") && strings.HasSuffix(val, "}}") {
 			m.ValueType = "variable"
@@ -1546,43 +1487,319 @@ func (p *Parser) parseFieldMapping() *ast.FieldMapping {
 			m.StaticVal = val
 		}
 		p.nextToken()
+		return m
+	}
 
-	case p.curToken.Type == lexer.TOKEN_TRUE:
+	// Handle boolean literals directly
+	if p.curToken.Type == lexer.TOKEN_TRUE {
 		m.ValueType = "static_bool"
 		m.StaticVal = "true"
 		p.nextToken()
-
-	case p.curToken.Type == lexer.TOKEN_FALSE:
+		return m
+	}
+	if p.curToken.Type == lexer.TOKEN_FALSE {
 		m.ValueType = "static_bool"
 		m.StaticVal = "false"
 		p.nextToken()
-
-	case p.curToken.Literal == "item" || strings.HasPrefix(p.curToken.Literal, "item."):
-		// item.field_name reference
-		m.ValueType = "item_field"
-		m.SourcePath = p.parseItemExpression()
-
-	default:
-		// Could be an identifier that starts with "item" read as separate tokens,
-		// or a negative number
-		if p.curToken.Literal == "-" {
-			p.nextToken() // skip '-'
-			if p.curToken.Type == lexer.TOKEN_INT {
-				m.ValueType = "static_number"
-				m.StaticVal = "-" + p.curToken.Literal
-				p.nextToken()
-			} else {
-				p.addError("expected number after '-'")
-				return nil
-			}
-		} else {
-			// Treat as item field reference
-			m.ValueType = "item_field"
-			m.SourcePath = p.parseItemExpression()
-		}
+		return m
 	}
 
+	// Parse as expression (handles arithmetic and simple cases)
+	expr := p.parseExpression()
+	if expr == nil {
+		return nil
+	}
+
+	// Try to simplify expression to legacy format for backward compatibility
+	if simplified := p.simplifyExpr(expr, m); simplified {
+		return m
+	}
+
+	// Complex expression — use expression evaluator
+	m.ValueType = "expression"
+	m.Expression = expr
 	return m
+}
+
+// simplifyExpr tries to convert a simple expression into legacy FieldMapping fields.
+// Returns true if simplification succeeded, false if it's a complex expression.
+func (p *Parser) simplifyExpr(expr ast.Expr, m *ast.FieldMapping) bool {
+	switch e := expr.(type) {
+	case *ast.NumberLitExpr:
+		m.ValueType = "static_number"
+		m.StaticVal = e.Value
+		return true
+
+	case *ast.FieldRefExpr:
+		m.ValueType = "item_field"
+		m.SourcePath = e.Path
+		return true
+
+	case *ast.VarRefExpr:
+		m.ValueType = "variable"
+		m.StaticVal = "{{" + e.Name + "}}"
+		return true
+
+	case *ast.CallExpr:
+		// Only simplify if it's a type coercion with a simple field ref argument
+		if e.Name == "number" || e.Name == "string" || e.Name == "bool" {
+			if fieldRef, ok := e.Arg.(*ast.FieldRefExpr); ok {
+				m.ValueType = "coercion"
+				m.Coercion = e.Name
+				m.SourcePath = fieldRef.Path
+				return true
+			}
+		}
+		return false
+
+	case *ast.UnaryExpr:
+		// Simplify unary minus on a number literal: -25000
+		if e.Op == "-" {
+			if lit, ok := e.Operand.(*ast.NumberLitExpr); ok {
+				m.ValueType = "static_number"
+				m.StaticVal = "-" + lit.Value
+				return true
+			}
+		}
+		return false
+
+	default:
+		return false
+	}
+}
+
+// --- Pratt Expression Parser ---
+
+// parseExpression is the entry point for arithmetic expression parsing.
+func (p *Parser) parseExpression() ast.Expr {
+	return p.parseAdditive()
+}
+
+// parseAdditive handles + and - (lowest precedence binary ops).
+func (p *Parser) parseAdditive() ast.Expr {
+	left := p.parseMultiplicative()
+	if left == nil {
+		return nil
+	}
+
+	for p.curToken.Type == lexer.TOKEN_PLUS || p.curToken.Type == lexer.TOKEN_MINUS {
+		op := p.curToken.Literal
+		pos := p.curPos()
+		p.nextToken() // skip operator
+		right := p.parseMultiplicative()
+		if right == nil {
+			p.addError(fmt.Sprintf("expected expression after '%s'", op))
+			return left
+		}
+		left = &ast.BinaryExpr{Position: pos, Op: op, Left: left, Right: right}
+	}
+
+	return left
+}
+
+// parseMultiplicative handles * and / (higher precedence).
+func (p *Parser) parseMultiplicative() ast.Expr {
+	left := p.parseUnary()
+	if left == nil {
+		return nil
+	}
+
+	for p.curToken.Type == lexer.TOKEN_STAR || p.curToken.Type == lexer.TOKEN_SLASH {
+		op := p.curToken.Literal
+		pos := p.curPos()
+		p.nextToken() // skip operator
+		right := p.parseUnary()
+		if right == nil {
+			p.addError(fmt.Sprintf("expected expression after '%s'", op))
+			return left
+		}
+		left = &ast.BinaryExpr{Position: pos, Op: op, Left: left, Right: right}
+	}
+
+	return left
+}
+
+// parseUnary handles unary - prefix.
+func (p *Parser) parseUnary() ast.Expr {
+	if p.curToken.Type == lexer.TOKEN_MINUS {
+		pos := p.curPos()
+		p.nextToken() // skip '-'
+		operand := p.parseUnary()
+		if operand == nil {
+			p.addError("expected expression after unary '-'")
+			return nil
+		}
+		return &ast.UnaryExpr{Position: pos, Op: "-", Operand: operand}
+	}
+	return p.parsePrimary()
+}
+
+// parsePrimary handles atoms: literals, function calls, field refs, var refs, groups.
+func (p *Parser) parsePrimary() ast.Expr {
+	switch {
+	case p.curToken.Type == lexer.TOKEN_INT:
+		// Numeric literal
+		pos := p.curPos()
+		val := p.curToken.Literal
+		p.nextToken()
+		return &ast.NumberLitExpr{Position: pos, Value: val}
+
+	case p.curToken.Type == lexer.TOKEN_VARREF:
+		// {{variable}} reference
+		pos := p.curPos()
+		name := p.curToken.Literal
+		p.nextToken()
+		return &ast.VarRefExpr{Position: pos, Name: name}
+
+	case p.curToken.Type == lexer.TOKEN_LPAREN:
+		// Grouped expression: (expr)
+		pos := p.curPos()
+		p.nextToken() // skip '('
+		inner := p.parseExpression()
+		if inner == nil {
+			p.addError("expected expression after '('")
+			return nil
+		}
+		if p.curToken.Type != lexer.TOKEN_RPAREN {
+			p.addError("expected ')' to close grouped expression")
+			return inner
+		}
+		p.nextToken() // skip ')'
+		return &ast.GroupExpr{Position: pos, Inner: inner}
+
+	case p.curToken.Type == lexer.TOKEN_NUMBER && p.peekToken.Type == lexer.TOKEN_LPAREN:
+		// number() coercion function call
+		pos := p.curPos()
+		name := "number"
+		p.nextToken() // skip 'number'
+		p.nextToken() // skip '('
+		arg := p.parseExpression()
+		if arg == nil {
+			p.addError("expected expression inside number()")
+			return nil
+		}
+		if p.curToken.Type == lexer.TOKEN_RPAREN {
+			p.nextToken() // skip ')'
+		} else {
+			p.addError("expected ')' after function argument")
+		}
+		return &ast.CallExpr{Position: pos, Name: name, Arg: arg}
+
+	case p.curToken.Type == lexer.TOKEN_STRING_KW && p.peekToken.Type == lexer.TOKEN_LPAREN:
+		// string() coercion function call
+		pos := p.curPos()
+		name := "string"
+		p.nextToken() // skip 'string'
+		p.nextToken() // skip '('
+		arg := p.parseExpression()
+		if arg == nil {
+			p.addError("expected expression inside string()")
+			return nil
+		}
+		if p.curToken.Type == lexer.TOKEN_RPAREN {
+			p.nextToken() // skip ')'
+		} else {
+			p.addError("expected ')' after function argument")
+		}
+		return &ast.CallExpr{Position: pos, Name: name, Arg: arg}
+
+	case p.curToken.Type == lexer.TOKEN_BOOLEAN && p.peekToken.Type == lexer.TOKEN_LPAREN:
+		// bool()/boolean() coercion function call
+		pos := p.curPos()
+		p.nextToken() // skip 'boolean'
+		p.nextToken() // skip '('
+		arg := p.parseExpression()
+		if arg == nil {
+			p.addError("expected expression inside bool()")
+			return nil
+		}
+		if p.curToken.Type == lexer.TOKEN_RPAREN {
+			p.nextToken() // skip ')'
+		} else {
+			p.addError("expected ')' after function argument")
+		}
+		return &ast.CallExpr{Position: pos, Name: "bool", Arg: arg}
+
+	case p.curToken.Literal == "bool" && p.peekToken.Type == lexer.TOKEN_LPAREN:
+		// bool() as ident
+		pos := p.curPos()
+		p.nextToken() // skip 'bool'
+		p.nextToken() // skip '('
+		arg := p.parseExpression()
+		if arg == nil {
+			p.addError("expected expression inside bool()")
+			return nil
+		}
+		if p.curToken.Type == lexer.TOKEN_RPAREN {
+			p.nextToken() // skip ')'
+		} else {
+			p.addError("expected ')' after function argument")
+		}
+		return &ast.CallExpr{Position: pos, Name: "bool", Arg: arg}
+
+	case p.curToken.Type == lexer.TOKEN_IDENT && p.peekToken.Type == lexer.TOKEN_LPAREN:
+		// Function call: floor(), round(), ceil(), abs(), or unknown
+		pos := p.curPos()
+		name := p.curToken.Literal
+		p.nextToken() // skip function name
+		p.nextToken() // skip '('
+		arg := p.parseExpression()
+		if arg == nil {
+			p.addError(fmt.Sprintf("expected expression inside %s()", name))
+			return nil
+		}
+		if p.curToken.Type == lexer.TOKEN_RPAREN {
+			p.nextToken() // skip ')'
+		} else {
+			p.addError("expected ')' after function argument")
+		}
+		return &ast.CallExpr{Position: pos, Name: name, Arg: arg}
+
+	case p.curToken.Type == lexer.TOKEN_IDENT:
+		// Could be item.field or intra-map reference
+		literal := p.curToken.Literal
+		pos := p.curPos()
+
+		if strings.HasPrefix(literal, "item.") {
+			// item.field as single token (lexer reads dots in identifiers)
+			path := strings.TrimPrefix(literal, "item.")
+			p.nextToken()
+			return &ast.FieldRefExpr{Position: pos, Path: path}
+		}
+
+		if literal == "item" {
+			// item followed by dot
+			p.nextToken() // skip 'item'
+			if p.curToken.Type == lexer.TOKEN_DOT {
+				p.nextToken() // skip '.'
+			}
+			// Read field path
+			var parts []string
+			for p.curToken.Type == lexer.TOKEN_IDENT || p.curToken.Type == lexer.TOKEN_DOT {
+				if p.curToken.Type == lexer.TOKEN_DOT {
+					p.nextToken()
+					continue
+				}
+				parts = append(parts, p.curToken.Literal)
+				p.nextToken()
+				if p.curToken.Type == lexer.TOKEN_DOT {
+					p.nextToken()
+					continue
+				}
+				break
+			}
+			return &ast.FieldRefExpr{Position: pos, Path: strings.Join(parts, ".")}
+		}
+
+		// Bare identifier — intra-map field reference
+		p.nextToken()
+		return &ast.IntraRefExpr{Position: pos, Name: literal}
+
+	default:
+		p.addError(fmt.Sprintf("unexpected token %q in expression", p.curToken.Literal))
+		p.nextToken()
+		return nil
+	}
 }
 
 // parseItemExpression parses an item.field.nested expression and returns the field path

@@ -297,8 +297,93 @@ func (t *TransformDecl) Pos() Position { return t.Position }
 type FieldMapping struct {
 	Position   Position
 	TargetName string // the target field name
-	ValueType  string // "item_field", "coercion", "static_number", "static_string", "static_bool", "variable"
+	ValueType  string // "item_field", "coercion", "static_number", "static_string", "static_bool", "variable", "expression"
 	SourcePath string // source field path (for item_field and coercion types, e.g. "material_number")
 	Coercion   string // coercion function name: "number", "string", "bool"
 	StaticVal  string // static literal value as string
+	Expression Expr   // non-nil when ValueType == "expression"
 }
+
+// --- Arithmetic Expression AST Nodes ---
+
+// Expr is the interface for all expression nodes in arithmetic expressions.
+type Expr interface {
+	Node
+	exprNode()
+}
+
+// NumberLitExpr represents a numeric literal: 25000, 3.14
+type NumberLitExpr struct {
+	Position Position
+	Value    string // raw string representation
+}
+
+func (n *NumberLitExpr) Pos() Position { return n.Position }
+func (n *NumberLitExpr) exprNode()     {}
+
+// FieldRefExpr represents an item.field reference: item.amount, item.address.city
+type FieldRefExpr struct {
+	Position Position
+	Path     string // field path without "item." prefix, e.g. "amount", "address.city"
+}
+
+func (f *FieldRefExpr) Pos() Position { return f.Position }
+func (f *FieldRefExpr) exprNode()     {}
+
+// IntraRefExpr represents a reference to a previously defined field in the same map block.
+type IntraRefExpr struct {
+	Position Position
+	Name     string // the field name being referenced, e.g. "required_qty"
+}
+
+func (i *IntraRefExpr) Pos() Position { return i.Position }
+func (i *IntraRefExpr) exprNode()     {}
+
+// VarRefExpr represents a {{variable}} reference in an expression.
+type VarRefExpr struct {
+	Position Position
+	Name     string // variable name without {{ }}, e.g. "scale_factor"
+}
+
+func (v *VarRefExpr) Pos() Position { return v.Position }
+func (v *VarRefExpr) exprNode()     {}
+
+// CallExpr represents a function call: number(expr), floor(expr), round(expr), ceil(expr), abs(expr)
+type CallExpr struct {
+	Position Position
+	Name     string // "number", "string", "bool", "floor", "round", "ceil", "abs"
+	Arg      Expr   // the inner expression
+}
+
+func (c *CallExpr) Pos() Position { return c.Position }
+func (c *CallExpr) exprNode()     {}
+
+// BinaryExpr represents a binary arithmetic operation: left op right
+type BinaryExpr struct {
+	Position Position
+	Op       string // "+", "-", "*", "/"
+	Left     Expr
+	Right    Expr
+}
+
+func (b *BinaryExpr) Pos() Position { return b.Position }
+func (b *BinaryExpr) exprNode()     {}
+
+// UnaryExpr represents a unary operation: -expr
+type UnaryExpr struct {
+	Position Position
+	Op       string // "-"
+	Operand  Expr
+}
+
+func (u *UnaryExpr) Pos() Position { return u.Position }
+func (u *UnaryExpr) exprNode()     {}
+
+// GroupExpr represents a parenthesized expression for round-trip preservation.
+type GroupExpr struct {
+	Position Position
+	Inner    Expr
+}
+
+func (g *GroupExpr) Pos() Position { return g.Position }
+func (g *GroupExpr) exprNode()     {}

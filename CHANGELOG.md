@@ -6,6 +6,104 @@ Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/).
 
 ---
 
+## [0.6.2] — 2026-07-23
+
+### Changed
+
+- **Revert auto-coerce `{{variable}}` ke number** — `{{var}}` di transform sekarang selalu output **string apa adanya**, tanpa implicit type conversion. Gunakan `number({{var}})` untuk explicit coercion ke number. Alasan: predictability, data integrity (leading zeros, precision), dan prinsip explicit > implicit.
+
+  ```flow
+  let pkg_size = "25000"
+  let order_id = "000123"
+
+  transform items from json "$.data" {
+    map {
+      # String output (apa adanya):
+      code = {{order_id}}                  # → "000123" (string, preserved)
+
+      # Number output (explicit coercion):
+      packaging_size = number({{pkg_size}})  # → 25000 (number)
+    }
+  }
+  ```
+
+  Migration dari v0.6.1: tambahkan `number()` wrapper di field yang butuh output numeric.
+
+- Versi naik ke 0.6.2
+
+---
+
+## [0.6.1] — 2026-07-23
+
+### Fixed
+
+- **`{{variable}}` in transform outputs number instead of string** — Sebelumnya `packaging_size = {{pkg_size}}` (dimana `pkg_size = "25000"`) menghasilkan `"packaging_size": "25000"` (string) di JSON output. Sekarang otomatis di-coerce ke number: `"packaging_size": 25000`. Variable yang berisi non-numeric string tetap output sebagai string.
+
+### Changed
+
+- Versi naik ke 0.6.1
+
+---
+
+## [0.6.0] — 2026-07-23
+
+### Added
+
+- **Arithmetic expressions in `transform map {}`** — Lakukan kalkulasi matematis langsung di field mapping. Mendukung semua operator dasar, math functions, referensi antar field, dan variabel.
+
+  ```flow
+  let scale_factor = "2"
+  let pkg_size = "25000"
+
+  transform items from json "$.data.material" {
+    map {
+      base_qty     = number(item.amount)
+      required_qty = number(item.amount) * {{scale_factor}}
+      full_packs   = floor(required_qty / {{pkg_size}})
+      bom_b_qty    = full_packs * {{pkg_size}}
+      bom_c_qty    = required_qty - bom_b_qty
+    }
+  }
+  ```
+
+  Fitur yang didukung:
+  | Fitur | Contoh |
+  |-------|--------|
+  | Operator dasar `+`, `-`, `*`, `/` | `number(item.amount) * 2` |
+  | Operator precedence standar | `a + b * c` → `a + (b * c)` |
+  | Parentheses grouping | `(a + b) * c` |
+  | `floor()` — bulatkan ke bawah | `floor(x / 25000)` |
+  | `round()` — bulatkan ke terdekat | `round(x / 3)` |
+  | `ceil()` — bulatkan ke atas | `ceil(x / 25000)` |
+  | `abs()` — nilai absolut | `abs(x - 100000)` |
+  | Intra-map field reference | `bom_c = required - bom_b` |
+  | Variable reference `{{var}}` | `number(item.x) * {{scale}}` |
+  | Float literal | `number(item.amount) * 2.5` |
+  | Unary minus | `-1`, `-(a + b)` |
+  | Nested function calls | `floor(number(item.amount) / 25000)` |
+
+  Error handling:
+  | Kondisi | Behavior |
+  |---------|----------|
+  | Division by zero | Hasil = 0, log warning |
+  | Non-numeric operand | Hasil = 0, log warning |
+  | Undefined variable | Operand = 0, log warning |
+  | Forward reference | Value = 0, log warning |
+
+- **Float literal support in lexer** — Angka desimal seperti `2.5`, `3.14` sekarang dikenali sebagai numeric literal di seluruh DSL.
+
+- **`{{variable}}` token in lexer** — Variable reference `{{name}}` sekarang di-tokenize sebagai single token (`TOKEN_VARREF`), memungkinkan penggunaan langsung di dalam arithmetic expressions tanpa wrapping string.
+
+### Changed
+
+- Versi naik ke 0.6.0 (minor bump — arithmetic expression support)
+- `+`, `-`, `*`, `/` ditambahkan sebagai operator tokens di lexer
+- `FieldMapping` AST node sekarang memiliki field `Expression` untuk menyimpan expression tree
+- `resolveFieldMappingValue` menerima `computedFields` parameter untuk mendukung intra-map references
+- Backward compatible: semua existing `.flow` files tetap berjalan tanpa perubahan
+
+---
+
 ## [0.5.0] — 2026-07-22
 
 ### Added

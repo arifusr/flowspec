@@ -632,7 +632,136 @@ flow CreateUsersBatch {
 
 ---
 
-## 12. Perbandingan: YAML vs FlowSpec
+## 12. Transform — Reshape Data Antar Step
+
+Transform memungkinkan Anda **mengekstrak array** dari response, lalu **membuat array baru** dengan field mappings, type coercion, dan operasi aritmatika.
+
+### Basic Transform
+
+```flow
+step "Get materials" {
+  run GetMaterials
+
+  transform items from json "$.data.material" {
+    map {
+      material_id   = item.material_number
+      material_name = item.name
+      base_qty      = number(item.amount)
+      status        = "active"
+      packaging     = 25000
+    }
+  }
+}
+```
+
+### Arithmetic Expressions
+
+Transform mendukung operasi aritmatika penuh di sisi kanan `=`:
+
+```flow
+transform items from json "$.data.material" {
+  map {
+    // Basic operators
+    doubled    = number(item.amount) * 2
+    halved     = number(item.amount) / 2
+    added      = number(item.amount) + 1000
+    subtracted = number(item.amount) - 500
+
+    // Operator precedence: * dan / lebih tinggi dari + dan -
+    result     = number(item.amount) + 10 * 2     // = amount + 20
+
+    // Parentheses untuk override precedence
+    result2    = (number(item.amount) + 10) * 2   // = (amount + 10) * 2
+  }
+}
+```
+
+### Math Functions
+
+```flow
+transform items from json "$.data.material" {
+  map {
+    packs    = floor(number(item.amount) / 25000)
+    rounded  = round(number(item.amount) / 3)
+    ceiling  = ceil(number(item.amount) / 25000)
+    absolute = abs(number(item.amount) - 100000)
+  }
+}
+```
+
+| Function | Deskripsi |
+|----------|-----------|
+| `floor(x)` | Bulatkan ke bawah (toward -∞) |
+| `round(x)` | Bulatkan ke terdekat (half away from zero: 2.5 → 3) |
+| `ceil(x)` | Bulatkan ke atas (toward +∞) |
+| `abs(x)` | Nilai absolut |
+
+### Intra-Map Field Reference
+
+Field yang sudah didefinisikan di atas bisa direferensi sebagai operand:
+
+```flow
+transform items from json "$.data.material" {
+  map {
+    required    = number(item.amount) * 2
+    full_packs  = floor(required / 25000)       // referensi 'required'
+    bom_b       = full_packs * 25000            // referensi 'full_packs'
+    bom_c       = required - bom_b              // referensi keduanya
+  }
+}
+```
+
+> **Note:** Hanya backward reference yang didukung. Forward reference (mereferensi field yang belum dideklarasi) menghasilkan 0 dengan warning.
+
+### Variable Reference dalam Expressions
+
+Gunakan `{{variable}}` di dalam ekspresi aritmatika:
+
+```flow
+let scale_factor = "2"
+let pkg_size = "25000"
+
+transform items from json "$.data.material" {
+  map {
+    required   = number(item.amount) * {{scale_factor}}
+    full_packs = floor(required / {{pkg_size}})
+    bom_b      = full_packs * {{pkg_size}}
+    bom_c      = required - bom_b
+  }
+}
+```
+
+### Error Handling
+
+| Situasi | Behavior |
+|---------|----------|
+| Division by zero | Hasil = 0, log warning |
+| Non-numeric operand | Hasil = 0, log warning |
+| Undefined variable | Operand = 0, log warning |
+| Forward reference | Value = 0, log warning |
+
+### Menggunakan Hasil Transform
+
+Hasil transform disimpan sebagai JSON array string di variable. Gunakan `{{variable}}` di body request:
+
+```flow
+step "Submit BOM" {
+  run GetMaterials
+  transform items from json "$.data" {
+    map { ... }
+  }
+
+  run SubmitBOM {
+    body json {
+      materials: "{{items}}"
+    }
+  }
+}
+```
+
+---
+
+## 13. Perbandingan: YAML vs FlowSpec
 
 ### YAML (sebelum)
 
@@ -676,7 +805,7 @@ Lebih ringkas, data flow terbaca, tidak perlu navigasi antar file untuk skenario
 
 ---
 
-## 13. CLI untuk DSL
+## 14. CLI untuk DSL
 
 ```bash
 # Jalankan file .flow
@@ -711,7 +840,7 @@ apitest dsl complete --shell bash >> ~/.bashrc
 
 ---
 
-## 14. Error Messages (DSL-aware)
+## 15. Error Messages (DSL-aware)
 
 YAML generik:
 ```
@@ -735,7 +864,7 @@ Error [flows/checkout.flow:24:7]
 
 ---
 
-## 15. Architecture: Parse → IR → Execute
+## 16. Architecture: Parse → IR → Execute
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
@@ -751,7 +880,7 @@ Semua format input (FlowSpec, YAML, Postman import) dikonvergi ke **IR yang sama
 
 ---
 
-## 16. Grammar (EBNF Ringkas)
+## 17. Grammar (EBNF Ringkas)
 
 ```ebnf
 file        = { import | env | auth | request | flow | fragment } ;
@@ -771,7 +900,7 @@ Parser implementasi: ANTLR, Tree-sitter, atau hand-written recursive descent.
 
 ---
 
-## 17. Roadmap DSL
+## 18. Roadmap DSL
 
 | Fase | Fitur |
 |---|---|
@@ -782,7 +911,7 @@ Parser implementasi: ANTLR, Tree-sitter, atau hand-written recursive descent.
 
 ---
 
-## 18. Contoh Lengkap: E-Commerce Checkout
+## 19. Contoh Lengkap: E-Commerce Checkout
 
 ```flow
 // flows/checkout.flow
